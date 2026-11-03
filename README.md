@@ -1,113 +1,41 @@
-# Requirement Compiler
+# ARC-Bench BookStack 需求编译智能体课程项目
 
-Compile `requirements.yaml` and reference images into a React + Express + SQLite application through 13 passes: requirements, database schema and obligations, backend APIs and tests, UI, and frontend triggers with end-to-end tests. Intermediate artifacts are saved under the output directory's `.arc/` folder.
+优化目标：以可复现评测提高需求编译生成应用的质量，并控制 token 与时间成本。
 
-## Environment
+本项目基于 [参考实现](https://github.com/code-philia/requirement-compilation-structure)，保留上游历史；初始 SHA 为 `d3da23e9897db84cfd37ce04a4ab5b38424ef399`。原始说明见 [UPSTREAM_README](docs/UPSTREAM_README.md)。
 
-Install [Python 3.11+](https://www.python.org/downloads/), [Node.js 22.12+ with npm](https://nodejs.org/en/download), and [uv](https://docs.astral.sh/uv/getting-started/installation/). Ensure `node`, `npm`, and `uv` are available in your terminal; reopen it after installation.
+## 从这里开始
 
-Run from the repository root using your platform's shell.
+1. 阅读 [项目任务书](docs/00-项目任务书.md) 和 [两周优化计划](docs/01-优化计划.md)。
+2. 按 [实验与运行手册](docs/03-实验与运行手册.md) 下载正式任务、复现 B0 并记录真实结果。
+3. 认领 [小组协作待办](docs/05-小组协作.md)，使用分支与 PR 互审。
+4. 按 [六页汇报提纲](docs/04-汇报提纲.md) 准备总计 10 分钟的展示与问答。
 
-**Windows (PowerShell)**
+## 项目导航
+
+| 目录 | 用途 |
+|---|---|
+| docs/ | 任务、计划、架构、实验、汇报和协作规范 |
+| infrastructure/、00–12 脚本、main.py | 上游需求编译器源码，后续优化入口 |
+| experiments/ | 真实运行与失败分析 CSV；raw/ 原始数据本地保留 |
+| team-tools/ | 连接空 GitHub 仓库并首次推送的脚本 |
+| .github/ | Issue 与 PR 模板 |
+| materials/（本地） | 用户提供的 PPT 模板、平台页面快照 |
+| tasks/（待下载，本地） | 正式 BookStack 需求、图片和平台 Agent Template |
+| outputs/（运行后，本地） | 生成应用与 .arc 编译证据 |
+
+## 当前状态
+
+已完成本地工作区、代码核对、方案和协作材料。BookStack 平台基线、优化实现及真实成绩尚未完成；实验记录表未填入虚构数据。远程仓库创建与推送状态见 [初始化记录](docs/06-来源与初始化记录.md)。
+
+**优先事项：** 当前 input/ 是认证示例；先确认完整 BookStack 输入与平台入口。上游 scripts/package.py 会把 .env 打包，正式提交前必须采用干净发布目录或修正打包逻辑。不要提交真实 API Key。
+
+## 连接 GitHub
+
+创建空的私有仓库后，在本目录执行（替换 OWNER/REPO）：
 
 ```powershell
-uv sync
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-uv run playwright install chromium
+./team-tools/Connect-GitHub.ps1 -RepositoryUrl https://github.com/OWNER/REPO.git
 ```
 
-**macOS / Linux (bash or zsh)**
-
-```bash
-uv sync
-if [ ! -f .env ]; then cp .env.example .env; fi
-uv run playwright install chromium
-```
-
-On supported Debian/Ubuntu Linux systems, use `uv run playwright install --with-deps chromium` instead to also install browser system dependencies; this may require sudo.
-
-If npm needs to compile native dependencies such as `better-sqlite3`, install the platform's build tools:
-
-| Platform | Build tools |
-| --- | --- |
-| Windows | Visual Studio Build Tools with **Desktop development with C++**, plus Python available to npm. |
-| macOS | Xcode Command Line Tools: `xcode-select --install`. |
-| Linux | Python, make, and a C++ compiler; on Debian/Ubuntu: `sudo apt-get install python3 build-essential`. |
-
-Set `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `MODEL` in `.env`. Use a model that accepts image input.
-
-## Run
-
-The input directory must contain `requirements.yaml` and its referenced images. The examples use `input/` and write the generated application to `outputs/demo/`. The commands below work in PowerShell, bash, and zsh.
-
-### Full pipeline
-
-```bash
-uv run main.py input --output-dir outputs/demo
-```
-
-Add `--model-log` to display and save detailed model input/output, or `--port 33000` to change the backend port (default: 3000). Token usage and model latency are always shown.
-
-### Step by step
-
-Run these commands in order. They call the same 13 passes with the same default settings as `main.py`. Step 01 uses `--no-browse` to match the non-interactive pipeline.
-
-```bash
-uv run 00_project_initialization.py --input input --output outputs/demo
-uv run 01_explore_requirement.py --input input --output outputs/demo --no-browse
-uv run 02_build_db_schema.py --input input --output outputs/demo
-uv run 03_infer_db_obligations.py --input input --output outputs/demo
-uv run 04_check_db_obligations.py --input input --output outputs/demo
-uv run 05_implement_db.py --input input --output outputs/demo
-uv run 06_design_backend_apis.py --input input --output outputs/demo
-uv run 07_check_backend_apis.py --input input --output outputs/demo
-uv run 08_implement_backend_tdd.py --input input --output outputs/demo
-uv run 09_design_ui.py --input input --output outputs/demo
-uv run 10_implement_ui.py --input input --output outputs/demo
-uv run 11_design_frontend_triggers.py --input input --output outputs/demo
-uv run 12_implement_frontend_tdd.py --input input --output outputs/demo
-```
-
-For individual steps, add `--pause` for teaching pauses or `--debug-model-io` for detailed model I/O. Set a custom backend port with `--port` in step 00.
-
-### Start the generated application
-
-```bash
-cd outputs/demo
-npm run db:init
-npm run build
-npm start
-```
-
-Open `http://localhost:3000` (or the port you selected).
-
-## Code map and extension points
-
-![Compiler code map](assets/compiler-code-map.svg)
-
-Numbered scripts orchestrate each pass. Domain logic lives in `infrastructure/stages/`; shared agent and project services live in `infrastructure/shared/`.
-
-### Module guide
-
-| Module | Entry | Purpose |
-| --- | --- | --- |
-| Pipeline | [main.py](main.py), [compiler.py](infrastructure/compiler.py) | Configuration, pass order, and reports. |
-| Requirements · 00–01 | [requirements/](infrastructure/stages/requirements/), [project/](infrastructure/shared/project/) | Requirement tree and project initialization. |
-| Database · 02–05 | [database/](infrastructure/stages/database/) | Schema, obligations, DDL, and seed data. |
-| Backend · 06–08 | [backend/](infrastructure/stages/backend/) | API contracts, HTTP tests, and implementation. |
-| Frontend · 09–12 | [ui/](infrastructure/stages/frontend/ui/), [triggers/](infrastructure/stages/frontend/triggers/) | UI design, interactions, and browser acceptance. |
-| Agent loops | [proposals.py](infrastructure/shared/agent/proposals.py), [loop.py](infrastructure/shared/agent/loop.py) | Model requests, file edits, checks, and repair. |
-| Runtime services | [project/](infrastructure/shared/project/), [presentation/](infrastructure/utils/presentation/) | Templates, Git checkpoints, logs, and execution evidence. |
-
-### Extension points
-
-| Area | Current entry | Possible extension |
-| --- | --- | --- |
-| Memory | [conventions.py](infrastructure/shared/agent/conventions.py) stores shared decisions; task loops retain retrieved evidence. | Store validated repair lessons and retrieve only those relevant to the current task. |
-| RAG | [rag/](infrastructure/shared/rag/) provides BM25; [discovery.py](infrastructure/shared/agent/discovery.py) provides lexical search and exact reads. | Add embeddings, hybrid retrieval, or reranking to the relevant retrieval path. |
-| Tools | [tools/](infrastructure/shared/agent/tools/) registers and executes `read_file` and `edit_file`. | Add tool schemas, executors, permissions, and observation handling in `loop.py`, including external service adapters. |
-| Skills | No loader is implemented. | Select task-relevant `SKILL.md` guidance when assembling prompts, using the existing tools and permissions. |
-| Models | [text.py](infrastructure/shared/models/text.py), [vision.py](infrastructure/shared/models/vision.py). | Add providers or select models by task. |
-| Acceptance | Domain `testing.py` and runtime modules. | Support other application stacks or execution environments. |
-
-Keep each task focused on one requirement. Retrieve shared knowledge on demand, preserve canonical contracts, and use executable checks to accept changes.
+此脚本不创建远程仓库、不强制覆盖远程历史。成员用户名确认后由仓库所有者邀请协作。

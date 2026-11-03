@@ -4,8 +4,19 @@ __pycache__/
 outputs/
 output/
 slides/
-docs/
+# Course project documentation is versioned.
 /scripts/*
 !/scripts/package.py
 
 AGENTS.md
+
+# Local course references, task downloads, runs and credentials
+materials/
+tasks/
+.env.*
+!.env.example
+node_modules/
+dist/
+*.zip
+experiments/raw/
+.pytest_cache/
