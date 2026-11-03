@@ -20,3 +20,4 @@ dist/
 *.zip
 experiments/raw/
 .pytest_cache/
+releases/
