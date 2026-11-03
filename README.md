@@ -1,6 +1,8 @@
-# ARC-Bench BookStack 需求编译智能体课程项目
+# WebApp Builder Agent：根据用户需求生成网站的智能体
 
-优化目标：以可复现评测提高需求编译生成应用的质量，并控制 token 与时间成本。
+项目目标：构建能够理解用户需求、规划并生成可运行网站、执行验证并修复问题的通用 Agent。输入可以是自然语言、结构化需求和参考图；输出是可运行的网站源码、启动说明和验证报告。
+
+BookStack 是首个基线评测任务。ARC-Bench 提供跨任务的评测环境；同一 Agent 应通过任务输入适配不同网站，业务规则不硬编码进编译核心。初期沿用 React + Express + SQLite，网站业务类型的通用性与技术栈数量分开验证。
 
 本项目基于 [参考实现](https://github.com/code-philia/requirement-compilation-structure)，保留上游历史；初始 SHA 为 `d3da23e9897db84cfd37ce04a4ab5b38424ef399`。原始说明见 [UPSTREAM_README](docs/UPSTREAM_README.md)。
 
@@ -21,12 +23,12 @@
 | team-tools/ | 连接空 GitHub 仓库并首次推送的脚本 |
 | .github/ | Issue 与 PR 模板 |
 | materials/（本地） | 用户提供的 PPT 模板、平台页面快照 |
-| tasks/（待下载，本地） | 正式 BookStack 需求、图片和平台 Agent Template |
+| tasks/（待下载，本地） | 各评测任务的需求和图片，以及平台 Agent Template |
 | outputs/（运行后，本地） | 生成应用与 .arc 编译证据 |
 
 ## 当前状态
 
-已完成本地工作区、代码核对、方案和协作材料。BookStack 平台基线、优化实现及真实成绩尚未完成；实验记录表未填入虚构数据。远程仓库创建与推送状态见 [初始化记录](docs/06-来源与初始化记录.md)。
+已完成本地工作区、代码核对、方案和协作材料。自然语言入口、跨任务适配、平台基线和优化实现尚未完成；实验记录表未填入虚构数据。BookStack 首先用于复现，另一个任务用于验证同一 Agent 的泛化效果。远程仓库创建与推送状态见 [初始化记录](docs/06-来源与初始化记录.md)。
 
 **优先事项：** 当前 input/ 是认证示例；先确认完整 BookStack 输入与平台入口。上游 scripts/package.py 会把 .env 打包，正式提交前必须采用干净发布目录或修正打包逻辑。不要提交真实 API Key。
 
@@ -35,7 +37,7 @@
 创建空的私有仓库后，在本目录执行（替换 OWNER/REPO）：
 
 ```powershell
-./team-tools/Connect-GitHub.ps1 -RepositoryUrl https://github.com/OWNER/REPO.git
+./team-tools/Connect-GitHub.ps1 -RepositoryUrl https://github.com/OWNER/webapp-builder-agent.git
 ```
 
 此脚本不创建远程仓库、不强制覆盖远程历史。成员用户名确认后由仓库所有者邀请协作。
