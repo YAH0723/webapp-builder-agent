@@ -34,6 +34,8 @@ BookStack 是首个基线评测任务。ARC-Bench 提供跨任务的评测环境
 
 ## 连接 GitHub
 
+小组私有仓库：https://github.com/yah051222-spec/webapp-builder-agent 。main 已推送；加入小组与日常操作见 [GitHub 上手与约定](docs/07-GitHub上手与约定.md)。
+
 创建空的私有仓库后，在本目录执行（替换 OWNER/REPO）：
 
 ```powershell
