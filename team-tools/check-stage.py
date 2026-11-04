@@ -8,6 +8,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from infrastructure.shared.project.entrypoints import selected_path
+from infrastructure.shared.agent.replay import workload_digest
 from infrastructure.stages.backend.context import load_context
 from infrastructure.stages.backend.testing import BackendChecks, require_green as backend_green
 from infrastructure.stages.frontend.ui.testing import FrontendChecks, test_path as ui_path, require_green
@@ -55,6 +56,7 @@ def check(output, stage, ids=(), selected_checks=('typecheck', 'tests', 'build')
     report = {'kind': 'local_generated_stage_check', 'stage': stage, 'workspace': str(output),
               'scope': 'selected_targets' if ids else 'all_stage_targets', 'model_requests': 0,
               'official_evaluation': False, 'checks': {}, 'status': 'RUNNING'}
+    report['workload_sha256'] = workload_digest(output)
     start = time.monotonic()
     try:
         if stage in {'09', '11'}:

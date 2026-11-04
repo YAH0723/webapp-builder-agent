@@ -73,21 +73,36 @@ def synthesize_batches(arc_dir, tree, images, contexts, model, console, max_atte
                     setting('UI_DESIGN_BATCH_SIZE', 6), setting('BATCH_CONTEXT_CHARS', 80000))
     log_plan(arc_dir.parent, '09', groups, len(tree.leaves))
     failures = TaskFailures(arc_dir, '09_design_ui', console)
-    for number, group in enumerate(groups, 1):
+    queue = [(group, 0) for group in groups]
+    completed = set()
+    for number, (group, depth) in enumerate(queue, 1):
         rids = [record['id'] for record in group]
-        with failures.task('batch-' + str(number)):
+        identity = 'batch-' + str(number)
+        with failures.task(identity):
             request = {'requirements': {r['id']: r['requirement'] for r in group},
                        'existing_design': design}
             updated, _ = propose_json(model, DESIGN_RULES + '\n' + DESIGN_BATCH_RULES, request,
                 lambda proposal: accept_design(design, proposal, rids, tree), console,
-                'UI design batch ' + str(number), max_attempts,
+                'UI design batch ' + str(number), max_attempts if not depth else min(max_attempts, 3),
                 context_index=ContextIndex(lambda: {'page': design['pages'],
                     'ui_element': design['elements'], 'ui_data': data_symbols(design['elements'])}))
             for rid in rids:
                 bind_requirement_image_pages(updated, contexts[rid], rid)
             design = updated
+            completed.update(rids)
             save_json(arc_dir / 'ui_design.json', design)
-    failures.finish()
+        entry = failures.report['tasks'][identity]
+        entry.update(requirements=rids, split_depth=depth)
+        split_failed(queue, number, group, depth, entry, arc_dir.parent, '09')
+        if entry.get('recovery'):
+            entry['status'] = 'SPLIT_RECOVERY'
+        save_json(arc_dir / 'ui_design_batches.json', failures.report)
+    for rid in set(tree.leaves) - completed:
+        failures.report['tasks']['uncovered:' + rid] = {'status': 'FAILED', 'error': 'No accepted UI design batch covers this requirement'}
+    try:
+        failures.finish()
+    finally:
+        save_json(arc_dir / 'ui_design_batches.json', failures.report)
     save_json(arc_dir / 'ui_design.json', design)
     return design
 

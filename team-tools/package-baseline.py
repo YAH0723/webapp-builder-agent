@@ -75,7 +75,7 @@ Inspect compilation.json and actual evaluator results, not just process exit sta
 """
 
 
-README_B4 = """# WebApp Builder Agent: B4 batched generation
+README_B4 = """# WebApp Builder Agent: B4.1 local replay and UI recovery
 
 General requirement-to-web-application compiler, not a pre-generated application.
 Entry: python3 main.py REQUIREMENTS_DIRECTORY --output-dir APPLICATION_DIRECTORY
@@ -97,6 +97,7 @@ Positive settings: ARC_B4_API_BATCH_SIZE=5, ARC_B4_UI_DESIGN_BATCH_SIZE=6,
 ARC_B4_PAGE_BATCH_SIZE=4, ARC_B4_ACCEPTANCE_BATCH_SIZE=4,
 ARC_B4_BATCH_CONTEXT_CHARS=80000, ARC_B4_BATCH_CALLS=48.
 Reports and .arc/b3_metrics.jsonl retain plans, failures and actual check evidence.
+B4.1 adds one bounded split for failed UI design batches and local replay tooling.
 
 Platform supplies OPENAI_BASE_URL and OPENAI_API_KEY. No .env or key is bundled.
 No paid inference or official evaluation is performed during packaging. Local checks
@@ -114,9 +115,9 @@ def compiler_path(name: str) -> bool:
     )
 
 
-def build(output: Path, variant: str = 'B4') -> dict:
-    if variant not in {'B0', 'B4'}:
-        raise ValueError('Use the frozen B0/B3 branches for previous variants; this branch packages B4')
+def build(output: Path, variant: str = 'B4.1') -> dict:
+    if variant not in {'B0', 'B4.1'}:
+        raise ValueError('Use frozen branches/packages for previous variants; this branch packages B4.1')
     names = sorted(name.decode("utf-8") for name in git("ls-files", "-z").split(b"\0")
         if name and compiler_path(name.decode("utf-8")))
     payload = {}
@@ -134,7 +135,7 @@ def build(output: Path, variant: str = 'B4') -> dict:
         payload[name] = data
     required = {"main.py", "requirements.txt", "infrastructure/compiler.py",
         "infrastructure/shared/project/templates/deploy.sh"}
-    if variant == 'B4':
+    if variant == 'B4.1':
         required.update({'infrastructure/shared/agent/efficiency.py',
             'infrastructure/shared/agent/batching.py', 'infrastructure/stages/backend/batching.py',
             'infrastructure/stages/frontend/ui/batching.py',
@@ -149,7 +150,7 @@ def build(output: Path, variant: str = 'B4') -> dict:
         raise ValueError('Commit the reviewed compiler before packaging')
     payload["README.md"] = (README if variant == 'B0' else README_B4).encode("utf-8")
     manifest = {
-        "variant": "B0-reference" if variant == 'B0' else 'B4-batched-generation', "source_commit": git("rev-parse", "HEAD").decode().strip(),
+        "variant": "B0-reference" if variant == 'B0' else 'B4.1-local-replay', "source_commit": git("rev-parse", "HEAD").decode().strip(),
         "baseline_compiler_commit": "e529ae516a2f231e41439b750dfb5b88f7e20657",
         "upstream_commit": UPSTREAM, "compiler_unchanged": unchanged,
         "entrypoint": "main.py", "default_model": "deepseek-flash",
@@ -183,7 +184,7 @@ def build(output: Path, variant: str = 'B4') -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--variant', choices=['B0','B4'], default='B4')
+    parser.add_argument('--variant', choices=['B0','B4.1'], default='B4.1')
     parser.add_argument("--output", type=Path)
     args=parser.parse_args()
     print(json.dumps(build(args.output or ROOT / f'releases/webapp-builder-agent-{args.variant}.zip', args.variant), ensure_ascii=False, indent=2))

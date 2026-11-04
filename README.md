@@ -59,5 +59,6 @@ npm start
 - [B3 成组流程实现与成本控制](docs/b3-flow-batches.md)
 - [B4 批量生成与单套独立验收](docs/b4-batched-generation.md)
 - [本地单步检查](docs/local-validation.md)
+- [B4.1 本地回放与 UI 设计恢复](docs/b41-local-replay.md)
 
 参考实现固定版本：`d3da23e9897db84cfd37ce04a4ab5b38424ef399`。本分支为 B4 候选：对后端、UI 设计与页面实现成组生成，以确定性接口绑定替代重复交互设计，并使用一套独立原始需求验收。保留最终回归、精确去重、工具权限和有限修复。实际综合分与费用收益需平台评测验证。
