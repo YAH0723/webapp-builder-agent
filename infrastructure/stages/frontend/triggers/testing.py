@@ -32,7 +32,7 @@ class E2EChecks(FrontendChecks):
         return super().typecheck(files, test_roots=("frontend/tests/ui", "frontend/tests/e2e"),
             source_files=("src/**/*.ts", "src/**/*.tsx") if full_source else ())
 
-    def tests(self, files):
+    def tests(self, files, *, fail_fast=None):
         """Run selected E2E specs and keep startup/runner failures available for repair."""
         if not files:
             raise ValueError("Do not run empty E2E suites")
@@ -45,7 +45,8 @@ class E2EChecks(FrontendChecks):
             env = {**os.environ, "ARC_E2E_TEMP_ROOT": temporary}
             print("Playwright E2E | real backend + isolated database | " + ", ".join(files), flush=True)
             try:
-                options = ["--max-failures=1"] if enabled("fail_fast") else []
+                stop_early = enabled("fail_fast") if fail_fast is None else fail_fast
+                options = ["--max-failures=1"] if stop_early else []
                 result = self.execute([RUNNER, *files, *options], env=env)
             except (ValueError, RuntimeError, OSError) as error:
                 return {"returncode": 1, "output": str(error), "errors": [str(error)],

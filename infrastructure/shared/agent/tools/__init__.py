@@ -59,7 +59,18 @@ class FileTools:
         return task
 
     def schemas(self):
-        return deepcopy([item[1] for item in TOOL_REGISTRY.values()])
+        definitions = deepcopy([item[1] for item in TOOL_REGISTRY.values()])
+        from infrastructure.shared.agent.efficiency import enabled
+        if enabled('scoped_tools') and self.readable is not None:
+            allowed = sorted(self.readable)
+            existing = [path for path in allowed if self.path(path).is_file()]
+            for schema in definitions:
+                if schema['tool'] == 'read_file':
+                    properties = schema['parameters']['properties']
+                    properties['path'] = {**properties['path'], 'enum': allowed}
+                    if allowed:
+                        schema['example']['path'] = (existing or allowed)[0]
+        return definitions
 
     def effect(self, calls):
         """Registered effects determine whether to continue reading or run acceptance."""

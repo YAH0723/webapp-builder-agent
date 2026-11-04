@@ -22,6 +22,7 @@ from infrastructure.stages.frontend.ui.runtime import APPLICATION_ENTRYPOINTS
 from infrastructure.stages.frontend.ui.testing import FrontendChecks, require_green, test_path as ui_test_path
 from infrastructure.utils.files import save_json
 from infrastructure.shared.project.git import checkpoint
+from infrastructure.stages.frontend.triggers.direct import DIRECT_IMPLEMENT_INSTRUCTIONS
 
 INSTRUCTIONS = '''Write independent final acceptance tests for ONE original requirement.
 Derive expected results from original_requirement and its Given/When/Then scenarios.
@@ -85,7 +86,7 @@ def original_requirements(input_dir):
 
 
 def run_independent_acceptance(input_dir, arc_dir, schema, backend, ui, design, model, console,
-        max_turns=10, *, process_report):
+        max_turns=10, *, process_report, focused=False):
     output = arc_dir.parent.resolve()
     tree = original_requirements(input_dir)
     checks = E2EChecks(output)
@@ -152,7 +153,7 @@ def run_independent_acceptance(input_dir, arc_dir, schema, backend, ui, design, 
                 checkpoint(output, stage="12", task=rid, action="Record independent acceptance before test review",
                     status="FAILED", details={"test_path": path, "checks": result})
                 review = run_file_agent(model, REVIEW_INSTRUCTIONS, task, workspace, compile_suite,
-                    max_turns, console, label + ' / Test review', feedback=result)
+                    min(max_turns, 2) if focused else max_turns, console, label + ' / Test review', feedback=result)
                 entry['review_turns'] = review['turns']
                 result = checks.tests([path])
                 entry["result"] = result
@@ -163,7 +164,7 @@ def run_independent_acceptance(input_dir, arc_dir, schema, backend, ui, design, 
                 process_files = [test_path(key, output) for key in process_ids
                     if (output / test_path(key, output)).is_file()]
                 acceptance_files = [acceptance_path(key) for key in [*accepted, rid]]
-                ui_files = [ui_test_path(pid) for pid in ui['pages']
+                ui_files = [] if focused else [ui_test_path(pid) for pid in ui['pages']
                     if (output / ui_test_path(pid)).is_file()]
                 repair_task = {**task, **context, 'requirement': task['original_requirement'],
                     'backend_apis': apis, 'target_trigger_ids': sorted(context['triggers']),
@@ -186,13 +187,13 @@ def run_independent_acceptance(input_dir, arc_dir, schema, backend, ui, design, 
                             raise ValueError(evidence['typecheck']['output'])
                         evidence['acceptance'] = checks.tests(acceptance_files)
                         require_acceptance(evidence['acceptance'])
-                        if process_files:
+                        if process_files and not focused:
                             evidence['smoke'] = checks.tests(process_files)
                             require_acceptance(evidence['smoke'])
-                        if ui_files:
+                        if ui_files and not focused:
                             evidence['ui'] = ui_checks.tests(ui_files)
                             require_green(evidence['ui'])
-                        if pending_verification or any(relative.startswith('backend/') for relative in repair_workspace.changed_paths):
+                        if not focused and (pending_verification or any(relative.startswith('backend/') for relative in repair_workspace.changed_paths)):
                             evidence['backend_typecheck'] = backend_checks.typecheck()
                             if evidence['backend_typecheck']['returncode']:
                                 raise ValueError(evidence['backend_typecheck']['output'])
@@ -202,18 +203,25 @@ def run_independent_acceptance(input_dir, arc_dir, schema, backend, ui, design, 
                             if suites:
                                 evidence['backend'] = backend_checks.tests(suites)
                                 require_backend_green(evidence['backend'])
-                        evidence['build'] = checks.build()
-                        if evidence['build']['returncode']:
-                            raise ValueError(evidence['build']['output'])
+                        if not focused:
+                            evidence['build'] = checks.build()
+                            if evidence['build']['returncode']:
+                                raise ValueError(evidence['build']['output'])
                     except (ValueError, RuntimeError) as error:
                         raise TriggerCheckFailure(str(error), evidence) from error
                     return evidence
 
                 def repair_feedback(value):
-                    return selection.feedback(repair_workspace, backend_selection.feedback(repair_workspace, value))
+                    result = selection.feedback(repair_workspace, backend_selection.feedback(repair_workspace, value))
+                    if focused:
+                        lock_application_repair(repair_workspace)
+                    return result
+
+                if focused:
+                    lock_application_repair(repair_workspace)
 
                 with implementation_task(output, entry, console, label + ' / Repair'):
-                    repair = run_file_agent(model, IMPLEMENT_INSTRUCTIONS + '\n\n'
+                    repair = run_file_agent(model, (DIRECT_IMPLEMENT_INSTRUCTIONS if focused else IMPLEMENT_INSTRUCTIONS) + '\n\n'
                         'Independent acceptance suites are read-only for implementation repair. '
                         'Preserve their original requirement outcomes and repair the real application. '
                         'Test review has already been performed separately. Failures in supplied final '
@@ -252,3 +260,11 @@ def run_independent_acceptance(input_dir, arc_dir, schema, backend, ui, design, 
     checkpoint(output, stage="12", task="independent acceptance", action="Publish final independent acceptance report",
         status=report['status'], details=report)
     return report
+
+
+def lock_application_repair(workspace):
+    """Implementation agents cannot change any test; test review is a separate task."""
+    def allowed(path):
+        return path.startswith(('backend/src/', 'frontend/src/')) and editable_runtime_path(workspace.output, path)
+    workspace.writable = {path for path in workspace.writable if allowed(path)}
+    workspace.allow_write = allowed

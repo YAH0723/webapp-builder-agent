@@ -8,6 +8,7 @@ from infrastructure.shared.agent.context import SourceFiles
 from infrastructure.shared.agent.discovery import project_index
 from infrastructure.shared.project.entrypoints import selected_path
 from infrastructure.shared.agent.loop import run_file_agent
+from infrastructure.shared.agent.efficiency import enabled, needs_generation_regression
 from infrastructure.shared.agent.recovery import implementation_task, final_checks, complete_report
 from infrastructure.stages.backend.context import load_context, requirement_context, api_requirement_uses, supplied_sources, related_schema
 from infrastructure.utils.files import read_artifact
@@ -191,7 +192,7 @@ def implement_backend_tdd(arc_dir: Path, pause: bool = False, max_turns: int = 1
                         compiled = checks.typecheck(generation_files)
                         if compiled["returncode"]:
                             raise ValueError(f"Test TypeScript compilation failed: {compiled['output']}")
-                        if accepted:
+                        if accepted and needs_generation_regression(workspace.changed_paths, chosen):
                             require_green(checks.tests([targets[key] for key in accepted]))
                         result = checks.tests(files_by_api[aid])
                         status = test_run_status(result)
@@ -254,9 +255,19 @@ def implement_backend_tdd(arc_dir: Path, pause: bool = False, max_turns: int = 1
                     }
                     workspace = selection.workspace(target=("api", aid), paths=[REGISTER_PATH],
                         references=[*files_by_api[aid], *supplied_sources(output, api, schema)])
-                    agent = run_file_agent(model, IMPLEMENT_INSTRUCTIONS, context, workspace,
-                        implementation_gate, max_turns, console, aid + " / Implementation", feedback=current,
-                        feedback_filter=lambda value: selection.feedback(workspace, value), context_index=context_index)
+                    agent = None
+                    if enabled('backend_precheck') and api_entry and (output / api_entry).is_file():
+                        try:
+                            if current['typecheck']['returncode']:
+                                raise ValueError(current['typecheck'].get('output', 'Typecheck failed'))
+                            require_green(current['tests'])
+                            agent = {'turns': 0, 'checks': current}
+                        except ValueError:
+                            pass
+                    if agent is None:
+                        agent = run_file_agent(model, IMPLEMENT_INSTRUCTIONS, context, workspace,
+                            implementation_gate, max_turns, console, aid + " / Implementation", feedback=current,
+                            feedback_filter=lambda value: selection.feedback(workspace, value), context_index=context_index)
                     accepted.append(aid)
                     result = agent["checks"]["tests"]
                     report["green"][aid] = {key: result[key] for key in ("tests", "pass", "fail")}

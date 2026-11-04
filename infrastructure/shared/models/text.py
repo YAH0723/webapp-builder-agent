@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from openai import OpenAI, OpenAIError
 from infrastructure.utils.presentation.model_io import http_client, invoke
 from infrastructure.shared.agent.efficiency import CONTEXT_RULES, compact_context, enabled, record_context_sizes
+from infrastructure.shared.agent.efficiency import REFERENCE_RULES, intern_context
 
 
 DEFAULT_MODEL = "deepseek-flash"
@@ -99,6 +100,11 @@ class TextModel:
         """Request JSON using the stage prompt and serialized task data."""
         if enabled("context_reuse"):
             compacted = compact_context(payload)
+            if enabled("context_interning"):
+                interned = intern_context(compacted)
+                if len(json.dumps(interned)) < len(json.dumps(compacted)):
+                    compacted = interned
+                    instructions += "\n\n" + REFERENCE_RULES
             record_context_sizes(payload, compacted)
             payload = compacted
             query = payload.get("context_result")

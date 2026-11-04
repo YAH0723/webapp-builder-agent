@@ -11,6 +11,8 @@ from infrastructure.shared.models.text import TextModel
 from infrastructure.utils.presentation.console import DemoConsole
 from infrastructure.utils.presentation.logging import console_log
 from infrastructure.utils.files import save_json
+from infrastructure.utils.files import read_artifact
+from infrastructure.shared.agent.efficiency import enabled
 
 
 def design_frontend_triggers(input_dir: Path, arc_dir: Path, pause: bool = False, max_attempts: int = 10) -> dict:
@@ -19,6 +21,15 @@ def design_frontend_triggers(input_dir: Path, arc_dir: Path, pause: bool = False
     tree, _, backend, images, contexts = load_frontend_context(arc_dir, input_dir)
     ui = load_ui_design(arc_dir, tree)
     console = DemoConsole(pause)
+    if enabled('direct_bindings') and enabled('acceptance_first'):
+        from infrastructure.stages.frontend.triggers.direct import plan_bindings
+        from infrastructure.stages.database.obligations.records import normalize_obligations
+        obligations = normalize_obligations(read_artifact(arc_dir, 'db_obligations.json'), tree)
+        result = plan_bindings(tree, backend, ui, obligations)
+        save_json(arc_dir / 'frontend_triggers.json', result)
+        console.show('Step 11 | Validated direct bindings',
+            f"Requirements: {len(result['bindings'])}; model calls: 0. Original requirements drive implementation.")
+        return result
     if not ui["pages"]:
         result = empty_triggers(tree)
         save_json(arc_dir / "frontend_triggers.json", result)

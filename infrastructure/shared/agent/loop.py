@@ -4,10 +4,10 @@ import json
 
 from infrastructure.shared.agent.discovery import DISCOVERY_RULES, DiscoverySession
 from infrastructure.shared.agent.conventions import task_conventions
-from infrastructure.shared.agent.efficiency import enabled
+from infrastructure.shared.agent.efficiency import enabled, task_call_limit
 
 from infrastructure.shared.agent.tools import FileTools
-from infrastructure.shared.agent.tools.protocol import FILE_TOOL_RULES
+from infrastructure.shared.agent.tools.protocol import FILE_TOOL_RULES, scoped_file_rules
 from infrastructure.shared.agent.proposals import RESPONSE_ERRORS, response_feedback
 from infrastructure.shared.project.git import checkpoint
 from infrastructure.utils.files import read_source
@@ -20,6 +20,13 @@ class AgentExhausted(ValueError):
         super().__init__(f"Agent exhausted {turns} rounds for {label}")
         self.turns = turns
         self.feedback = feedback
+
+
+class AgentCallBudgetExceeded(AgentExhausted):
+    """The task cannot make unbounded read/discovery calls inside an edit round."""
+
+    def __init__(self, label, turns, calls):
+        super().__init__(label, turns, {"error": "Task model-call budget exhausted", "model_calls": calls})
 
 
 def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
@@ -38,12 +45,18 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
     read_files = {}
     feedback = [] if feedback is None else [feedback_filter(feedback) if feedback_filter else feedback]
     check_feedback = list(feedback)
+    model_calls = 0
+    call_limit = task_call_limit() if enabled("task_budget") else None
     for turn in range(1, max_turns + 1):
         console.show(f"{label} | Edit round {turn}/{max_turns}",
             "Generate file edits, then run the stage's compilation and test acceptance checks.")
         response, applied, checking = None, False, False
         try:
             def request_model():
+                nonlocal model_calls
+                if call_limit is not None and model_calls >= call_limit:
+                    raise AgentCallBudgetExceeded(label, turn, model_calls)
+                model_calls += 1
                 # Gates may regenerate wiring outside edit_file; discard stale excerpts too.
                 for path, excerpts in list(read_files.items()):
                     target = files.path(path)
@@ -72,7 +85,7 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
                     request["task"]["shared_conventions"] = conventions
                 if context_result is not None:
                     request["context_result"] = context_result
-                rules = instructions + "\n\n" + FILE_TOOL_RULES
+                rules = instructions + "\n\n" + (scoped_file_rules(files) if enabled("scoped_tools") else FILE_TOOL_RULES)
                 if allow_discovery:
                     rules += "\n\n" + DISCOVERY_RULES
                 else:
@@ -138,6 +151,8 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
             checkpoint(files.output, task=label, action=f"Accept edit round {turn}",
                 details={"round": turn, "checks": checks})
             return {"turns": turn, "checks": checks}
+        except AgentCallBudgetExceeded:
+            raise
         except (*RESPONSE_ERRORS, RuntimeError, OSError) as error:
             message = str(error)
             console.show(f"{label} | Repair feedback", message)

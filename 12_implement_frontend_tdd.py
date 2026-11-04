@@ -11,6 +11,7 @@ from infrastructure.shared.models.text import TextModel
 from infrastructure.utils.presentation.console import DemoConsole
 from infrastructure.utils.presentation.logging import console_log
 from infrastructure.utils.files import save_json
+from infrastructure.shared.agent.efficiency import enabled
 
 
 def implement_frontend_triggers(input_dir: Path, arc_dir: Path, pause: bool = False,
@@ -27,6 +28,10 @@ def implement_frontend_triggers(input_dir: Path, arc_dir: Path, pause: bool = Fa
             save_json(arc_dir / "frontend_e2e.json", report)
             return report
         model = TextModel()
+        if enabled('acceptance_first'):
+            from infrastructure.stages.frontend.triggers.unified import run_acceptance_first
+            return run_acceptance_first(input_dir, arc_dir, tree, schema, backend, ui, interactions,
+                model, DemoConsole(pause), max_turns)
         result = run_trigger_tdd(arc_dir, tree, schema, backend, ui, interactions, images,
             contexts, model, DemoConsole(pause), report, max_turns, max_tests)
         acceptance = run_independent_acceptance(input_dir, arc_dir, schema, backend, ui, interactions,

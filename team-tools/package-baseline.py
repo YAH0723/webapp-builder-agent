@@ -11,6 +11,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM = "d3da23e9897db84cfd37ce04a4ab5b38424ef399"
+B1_SOURCE = "4a7d3df00d009d95f0a2b85bb7890d30e4276c89"
 README = """# WebApp Builder Agent: baseline B0
 
 Unoptimized reference requirement compiler, packaged for ARC-Bench Web tasks.
@@ -69,6 +70,38 @@ Inspect .arc/compilation.json as well as the process exit status.
 """
 
 
+README_B2 = """# WebApp Builder Agent: B2 acceptance-first
+
+Source: https://github.com/YAH0723/webapp-builder-agent
+Reference: d3da23e9897db84cfd37ce04a4ab5b38424ef399
+Entry: python3 main.py REQUIREMENTS_DIRECTORY --output-dir APPLICATION_DIRECTORY
+Dependencies: pip install -r requirements.txt; Node.js 22.12+, npm, Git, Bash.
+
+Default profile b2 replaces stage 12's duplicate process-smoke and independent
+acceptance authoring with a single original-requirement acceptance-first loop.
+Tests are authored/reviewed separately; implementation repair cannot write tests.
+Current/accepted acceptance checks run during local repair. Complete acceptance,
+UI, backend and build regression run at the end, with a bounded final repair.
+Full final acceptance disables fail-fast and rejects missing/empty suites.
+Stage 11 builds validated requirement/UI/API binding tables without model calls;
+original DB-obligation capability checks remain active.
+
+B2 also interns exact repeated JSON containers with input-only context references,
+provides scope-specific tool examples, and bounds actual model calls per task,
+including internal file/context lookups. Backend test-only generation defers its
+redundant accepted-suite run to the full implementation regression immediately after.
+
+ARC_AGENT_PROFILE=b0/b1/b2 selects the execution profile. Per-feature environment
+overrides take precedence. ARC_B2_MAX_TASK_CALLS defaults to 16.
+Model remains deepseek-flash; platform supplies OPENAI_BASE_URL/OPENAI_API_KEY.
+No keys, .env files, task data, generated apps or local logs are bundled.
+
+Tests and offline smoke results do not establish official ARC-Bench quality,
+runtime or monetary savings. Compare the same task/model on the platform.
+Inspect .arc/compilation.json and .arc/frontend_e2e.json, not just exit code.
+"""
+
+
 def git(*arguments: str) -> bytes:
     return subprocess.check_output(["git", *arguments], cwd=ROOT)
 
@@ -83,8 +116,8 @@ def compiler_path(name: str) -> bool:
 
 
 def build(output: Path, variant: str = "B0") -> dict:
-    if variant not in {"B0", "B1"}:
-        raise ValueError("variant must be B0 or B1")
+    if variant not in {"B0", "B1", "B2"}:
+        raise ValueError("variant must be B0, B1 or B2")
     names = sorted(name.decode("utf-8") for name in git("ls-files", "-z").split(b"\0")
         if name and compiler_path(name.decode("utf-8")))
     payload = {}
@@ -107,11 +140,13 @@ def build(output: Path, variant: str = "B0") -> dict:
     unchanged = not git("diff", UPSTREAM, "--", *names).strip()
     if variant == "B0" and not unchanged:
         raise ValueError("B0 requires unchanged reference compiler sources. Review changes before packaging.")
+    if variant == "B1" and git("diff", B1_SOURCE, "--", *names).strip():
+        raise ValueError("B1 is frozen at " + B1_SOURCE + "; use --variant B2 for the revised compiler.")
     if git("diff", "HEAD", "--", *names).strip():
         raise ValueError("Commit runtime changes before packaging so source_commit identifies the shipped code.")
-    payload["README.md"] = (README if variant == "B0" else README_B1).encode("utf-8")
+    payload["README.md"] = {"B0": README, "B1": README_B1, "B2": README_B2}[variant].encode("utf-8")
     manifest = {
-        "variant": "B0-reference" if variant == "B0" else "B1-efficiency",
+        "variant": {"B0": "B0-reference", "B1": "B1-efficiency", "B2": "B2-acceptance-first"}[variant],
         "source_commit": git("rev-parse", "HEAD").decode().strip(),
         "upstream_commit": UPSTREAM, "compiler_unchanged": unchanged,
         "entrypoint": "main.py", "default_model": "deepseek-flash",
@@ -120,6 +155,11 @@ def build(output: Path, variant: str = "B0") -> dict:
     if variant == "B1":
         manifest["default_profile"] = "b1"
         manifest["features"] = ["context_reuse", "access_hints", "fail_fast"]
+    if variant == "B2":
+        manifest["default_profile"] = "b2"
+        manifest["features"] = ["acceptance_first", "direct_bindings", "context_reuse", "context_interning",
+            "access_hints", "scoped_tools", "task_budget", "fail_fast", "backend_precheck"]
+        manifest["default_task_call_limit"] = 16
     payload["submission-manifest.json"] = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode()
     output = output.resolve()
     if output.is_relative_to(ROOT / "infrastructure"):
@@ -145,7 +185,7 @@ def build(output: Path, variant: str = "B0") -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--variant", choices=("B0", "B1"), default="B0")
+    parser.add_argument("--variant", choices=("B0", "B1", "B2"), default="B0")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     output = args.output or ROOT / f"releases/webapp-builder-agent-{args.variant}.zip"

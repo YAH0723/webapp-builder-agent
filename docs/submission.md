@@ -14,6 +14,8 @@ uv run python team-tools/package-baseline.py
 
 默认 B0 要求编译器与固定参考版本一致；B1 使用 `--variant B1` 打包，并在清单中记录当前源码提交号。编译运行代码须先提交，避免包内容与提交号不一致。不要使用会携带 `.env` 的上游 `scripts/package.py` 提交本地配置。
 
+B2 分支使用 `--variant B2`，生成 `releases/webapp-builder-agent-B2.zip`。B0/B1 应在各自冻结版本重新打包；B2 的 profile 与单项开关见 [工作流说明](acceptance-first.md)。
+
 ## 平台运行协议
 
 平台提供需求目录和应用输出目录，调用方式为：
