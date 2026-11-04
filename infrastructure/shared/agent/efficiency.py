@@ -25,7 +25,7 @@ def enabled(feature):
     profile = os.getenv("ARC_AGENT_PROFILE", "b2").lower()
     if profile not in {"b0", "b1", "b2"}:
         raise ValueError("ARC_AGENT_PROFILE must be b0, b1 or b2")
-    b2 = feature in {"acceptance_first", "direct_bindings", "task_budget", "context_interning", "scoped_tools", "backend_precheck", "contract_registry", "api_coordination"}
+    b2 = feature in {"acceptance_first", "direct_bindings", "task_budget", "context_interning", "scoped_tools", "backend_precheck", "contract_registry", "api_coordination", "diagnostics", "feature_runtime"}
     prefix = "ARC_B2_" if b2 else "ARC_B1_"
     value = os.getenv(prefix + feature.upper())
     if value is None:

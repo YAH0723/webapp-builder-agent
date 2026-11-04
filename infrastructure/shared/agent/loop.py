@@ -1,6 +1,7 @@
 """Bounded file editing with failure attribution and real acceptance checks."""
 
 import json
+from hashlib import sha256
 
 from infrastructure.shared.agent.discovery import DISCOVERY_RULES, DiscoverySession
 from infrastructure.shared.agent.conventions import task_conventions
@@ -10,7 +11,10 @@ from infrastructure.shared.agent.tools import FileTools
 from infrastructure.shared.agent.tools.protocol import FILE_TOOL_RULES, scoped_file_rules
 from infrastructure.shared.agent.proposals import RESPONSE_ERRORS, response_feedback
 from infrastructure.shared.project.git import checkpoint
-from infrastructure.utils.files import read_source
+from infrastructure.utils.files import read_source, save_json
+from infrastructure.shared.agent.diagnostics import repair_evidence, feedback_without_diagnostic_duplicates
+from infrastructure.shared.project.features import runtime_context
+from infrastructure.shared.agent.files import editable_application_path
 
 
 class AgentExhausted(ValueError):
@@ -71,6 +75,22 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
                             break
                 request = {"task": files.task_state(task), "files": files.state(), "feedback": feedback,
                     "context_kinds": list(index.records()) if index is not None else [], "tools": files.schemas()}
+                application_task = files.readable is None and not (files.target and files.target.kind.endswith('test'))
+                if application_task and any(path.startswith('frontend/src/') and files.can_write(path) for path in files.files):
+                    helpers = runtime_context(files.output)
+                    if helpers:
+                        request['task']['runtime_helpers'] = helpers
+                if application_task and enabled('diagnostics') and feedback:
+                    evidence = repair_evidence(files.output, task, feedback)
+                    if evidence:
+                        request['task']['repair_evidence'] = evidence
+                        request['feedback'] = feedback_without_diagnostic_duplicates(feedback)
+                        for path in evidence['suggested_source_paths']:
+                            if editable_application_path(files.output, path):
+                                files.files.add(path)
+                                files.writable.add(path)
+                        request['files'] = files.state()
+                        save_json(files.output / '.arc/diagnostics' / (sha256(label.encode()).hexdigest()[:16] + '.json'), evidence)
                 if enabled("access_hints") and files.readable is not None:
                     request["file_access"] = {"readable_paths": sorted(files.readable),
                         "notice": "Read only these paths. Use supplied contracts instead of protected implementation sources."}

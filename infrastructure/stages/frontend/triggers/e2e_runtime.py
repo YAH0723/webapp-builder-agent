@@ -7,11 +7,60 @@ their data. Business handlers and scenario assertions are generated separately."
 import json
 
 from infrastructure.utils.files import save_text
+from infrastructure.shared.agent.efficiency import enabled
 
 CONFIG = "frontend/playwright.e2e.config.ts"
 FIXTURE = "frontend/tests/e2e/support/context.ts"
 RUNNER = "frontend/scripts/test-e2e.mjs"
 VITE_CONFIG = "frontend/vite.e2e.config.ts"
+DIAGNOSTICS = "frontend/tests/e2e/support/diagnostics.ts"
+
+DIAGNOSTIC_SOURCE = '''// Compiler-owned observations, not acceptance assertions.
+import type { Page, TestInfo } from "@playwright/test";
+function route(value: string) {
+  try { return new URL(value, "http://local.invalid").pathname.slice(0, 300); }
+  catch { return "[invalid URL]"; }
+}
+function message(value: string) {
+  return value.replace(/https?:[^\\s)"<>]+/g, value => route(value))
+    .replace(/Bearer\\s+[^\\s,;]+/gi, "Bearer [redacted]")
+    .replace(/\\b(api[_-]?key|password|token|secret)\\s*[=:]\\s*[^\\s,;]+/gi, "$1=[redacted]").slice(0, 600);
+}
+export function observeApplication(page: Page) {
+  const events: Record<string, unknown>[] = [];
+  const append = (event: Record<string, unknown>) => {
+    events.push(event);
+    if (events.length > 40) {
+      const success = events.findIndex(item => item.kind === "http" && Number(item.status) < 400);
+      events.splice(success < 0 ? 0 : success, 1);
+    }
+  };
+  const runtime = (error: Error) => append({kind: "runtime", message: message(error.message)});
+  const consoleError = (entry: { type(): string; text(): string }) => {
+    if (entry.type() === "error") append({kind: "console", message: message(entry.text())});
+  };
+  const response = (entry: { url(): string; status(): number; request(): { method(): string } }) => {
+    const path = route(entry.url());
+    if (path.startsWith("/api/")) append({kind: "http", method: entry.request().method(), path, status: entry.status()});
+  };
+  const failed = (entry: { url(): string; method(): string; failure(): { errorText: string } | null }) => {
+    const path = route(entry.url());
+    if (path.startsWith("/api/")) append({kind: "network", method: entry.method(), path,
+      message: message(entry.failure()?.errorText ?? "Request failed")});
+  };
+  page.on("pageerror", runtime); page.on("console", consoleError);
+  page.on("response", response); page.on("requestfailed", failed);
+  return async (testInfo: TestInfo) => {
+    page.off("pageerror", runtime); page.off("console", consoleError);
+    page.off("response", response); page.off("requestfailed", failed);
+    // An expected negative response is an observation, not a failing assertion.
+    if (testInfo.status !== testInfo.expectedStatus || events.some(event => event.kind === "runtime" || event.kind === "network")) {
+      await testInfo.attach("arc-diagnostics", {contentType: "application/json",
+        body: Buffer.from(JSON.stringify({version: 1, events}))});
+    }
+  };
+}
+'''
 
 CONFIG_SOURCE = '''import { defineConfig } from "@playwright/test";
 const frontendPort = process.env.ARC_E2E_FRONTEND_PORT;
@@ -116,9 +165,18 @@ export { expect };
 
 def prepare_e2e(output, backend):
     """Write E2E configuration, real-server launchers, isolated database fixtures, and the npm test command."""
+    fixture = FIXTURE_SOURCE
+    if enabled('diagnostics'):
+        fixture = fixture.replace('import { test as base, expect } from "@playwright/test";',
+            'import { test as base, expect } from "@playwright/test";\nimport { observeApplication } from "./diagnostics.js";')
+        fixture = fixture.replace('applicationErrors: [async ({ page, database }, use) => {',
+            'applicationErrors: [async ({ page, database }, use, testInfo) => {\n    const finishObservations = observeApplication(page);')
+        fixture = fixture.replace('    await use();\n    if (errors.length)',
+            '    try { await use(); } finally { await finishObservations(testInfo); }\n    if (errors.length)')
+        save_text(output / DIAGNOSTICS, DIAGNOSTIC_SOURCE)
     sources = {CONFIG: CONFIG_SOURCE, RUNNER: RUNNER_SOURCE,
         VITE_CONFIG: 'import { defineConfig, mergeConfig } from "vite";\nimport base from "./vite.config";\nexport default mergeConfig(base, defineConfig({ server: { proxy: { "/api": process.env.ARC_BACKEND_URL! } } }));\n',
-        FIXTURE: FIXTURE_SOURCE}
+        FIXTURE: fixture}
     for relative, source in sources.items():
         save_text(output / relative, source)
     path = output / "package.json"

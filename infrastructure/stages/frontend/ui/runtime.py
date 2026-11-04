@@ -9,6 +9,7 @@ import re
 
 from infrastructure.shared.project.initialize import enable_import_case_checks
 from infrastructure.utils.files import save_text
+from infrastructure.shared.project.features import prepare_features
 
 PLAYWRIGHT_VERSION = "1.64.1"
 APPLICATION_ENTRYPOINTS = ("frontend/src/main.tsx", "frontend/src/App.tsx")
@@ -107,3 +108,4 @@ def prepare_frontend(output: Path) -> None:
     # replace its public interface beneath those pages.
     if not adapter.is_file():
         save_text(adapter, UI_RUNTIME)
+    prepare_features(output)

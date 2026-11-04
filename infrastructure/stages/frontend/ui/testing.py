@@ -13,6 +13,8 @@ import tempfile
 
 from infrastructure.stages.frontend.ui.design import data_symbols, page_elements, visible
 from infrastructure.utils.processes import capture_process, npm_command
+from infrastructure.shared.agent.diagnostics import diagnostic_attachment
+from infrastructure.shared.agent.efficiency import enabled
 
 KEY_TYPES = {"page", "form", "input", "checkbox", "select", "button", "heading", "link", "list", "image", "alert", "table", "text"}
 
@@ -121,7 +123,7 @@ def require_red(result: dict) -> None:
         raise ValueError(f"Expected missing-component assertion RED, not infrastructure/runtime failure: {result}")
 
 
-def parse_playwright_result(result: dict, include_files: bool = False) -> dict:
+def parse_playwright_result(result: dict, include_files: bool = False, artifact_root=None) -> dict:
     """Parse the Playwright JSON reporter into counts, failures, runtime errors, and optional per-file totals."""
     try:
         report = json.loads(result.pop("stdout"))
@@ -129,6 +131,7 @@ def parse_playwright_result(result: dict, include_files: bool = False) -> dict:
         raise ValueError(f"Playwright did not return its JSON report: {result['output']}") from error
     failures = []
     files = {}
+    diagnostics = []
 
     def visit(suite):
         """Accumulate nested Playwright suite/spec results into the normalized browser-check report."""
@@ -139,6 +142,10 @@ def parse_playwright_result(result: dict, include_files: bool = False) -> dict:
                 for run in test.get("results", []):
                     if run.get("status") not in {"passed", "skipped"}:
                         failures.append("\n".join(item.get("message", "") for item in run.get("errors", [])) + "\nTest file: " + filename)
+                        if enabled('diagnostics'):
+                            events = diagnostic_attachment(run.get('attachments', []), artifact_root)
+                            if events:
+                                diagnostics.append({'test_file': filename, 'events': events})
         for child in suite.get("suites", []):
             visit(child)
 
@@ -152,6 +159,8 @@ def parse_playwright_result(result: dict, include_files: bool = False) -> dict:
         "errors": report.get("errors", []), "failures": failures})
     if include_files:
         result["files"] = files
+    if diagnostics:
+        result['diagnostics'] = diagnostics[:12]
     result["output"] = json.dumps({key: value for key, value in result.items() if key != "output"}, ensure_ascii=False, indent=2)[-24000:]
     return result
 

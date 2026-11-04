@@ -14,6 +14,7 @@ UPSTREAM = "d3da23e9897db84cfd37ce04a4ab5b38424ef399"
 B1_SOURCE = "4a7d3df00d009d95f0a2b85bb7890d30e4276c89"
 B2_SOURCE = "c1cde93a4f73b19500a14b44d9438459fb2643a5"
 B21_SOURCE = "aeb123530991ae6392bc3888e81bcd758a2f3eec"
+B22_SOURCE = "7cc76e12995f72158c68b379a913da05fd007ac4"
 README = """# WebApp Builder Agent: baseline B0
 
 Unoptimized reference requirement compiler, packaged for ARC-Bench Web tasks.
@@ -133,6 +134,21 @@ ARC_B2_API_COORDINATION=0 restores the previous stage-06 behavior.
 Offline regressions are not an official accuracy, duration or cost result.
 """
 
+README_B23 = README_B22.replace('B2.2 coordinated API design', 'B2.3 evidence and feature runtime', 1) + """
+
+B2.3 adds bounded browser observations (API method/path/status, page/network/console
+errors) to failed-test attachments. URL credentials/queries/fragments and request
+headers/bodies are excluded. HTTP rejection is evidence, never an automatic failure.
+Application repair gets contract-linked evidence and relevant editable sources;
+independent acceptance authors do not get the implementation helper catalogue.
+Optional frontend helpers provide JSON transport, contract-ID API calls, asynchronous
+state rendering and concurrent-submit deduplication. They do not implement business
+rules, runtime response-schema validation, persistent idempotency or authentication.
+Custom files are preserved. Only unmodified managed files are refreshed.
+ARC_B2_DIAGNOSTICS=0 and ARC_B2_FEATURE_RUNTIME=0 disable the new layers separately.
+The outer 13-stage schedule and final full-regression gates remain in place.
+"""
+
 
 def git(*arguments: str) -> bytes:
     return subprocess.check_output(["git", *arguments], cwd=ROOT)
@@ -148,8 +164,8 @@ def compiler_path(name: str) -> bool:
 
 
 def build(output: Path, variant: str = "B0") -> dict:
-    if variant not in {"B0", "B1", "B2", "B2.1", "B2.2"}:
-        raise ValueError("variant must be B0, B1, B2, B2.1 or B2.2")
+    if variant not in {"B0", "B1", "B2", "B2.1", "B2.2", "B2.3"}:
+        raise ValueError("variant must be B0, B1, B2, B2.1, B2.2 or B2.3")
     names = sorted(name.decode("utf-8") for name in git("ls-files", "-z").split(b"\0")
         if name and compiler_path(name.decode("utf-8")))
     payload = {}
@@ -178,13 +194,16 @@ def build(output: Path, variant: str = "B0") -> dict:
         raise ValueError("B2 is frozen at " + B2_SOURCE + "; use --variant B2.1 for the contract-index version.")
     if variant == "B2.1" and git("diff", B21_SOURCE, "--", *names).strip():
         raise ValueError("B2.1 is frozen at " + B21_SOURCE + "; use --variant B2.2 for API coordination.")
+    if variant == "B2.2" and git("diff", B22_SOURCE, "--", *names).strip():
+        raise ValueError("B2.2 is frozen at " + B22_SOURCE + "; use --variant B2.3 for evidence/runtime changes.")
     if git("diff", "HEAD", "--", *names).strip():
         raise ValueError("Commit runtime changes before packaging so source_commit identifies the shipped code.")
     payload["README.md"] = {"B0": README, "B1": README_B1, "B2": README_B2,
-        "B2.1": README_B21, "B2.2": README_B22}[variant].encode("utf-8")
+        "B2.1": README_B21, "B2.2": README_B22, "B2.3": README_B23}[variant].encode("utf-8")
     manifest = {
         "variant": {"B0": "B0-reference", "B1": "B1-efficiency", "B2": "B2-acceptance-first",
-            "B2.1": "B2.1-generic-contracts", "B2.2": "B2.2-api-coordination"}[variant],
+            "B2.1": "B2.1-generic-contracts", "B2.2": "B2.2-api-coordination",
+            "B2.3": "B2.3-evidence-runtime"}[variant],
         "source_commit": git("rev-parse", "HEAD").decode().strip(),
         "upstream_commit": UPSTREAM, "compiler_unchanged": unchanged,
         "entrypoint": "main.py", "default_model": "deepseek-flash",
@@ -193,16 +212,18 @@ def build(output: Path, variant: str = "B0") -> dict:
     if variant == "B1":
         manifest["default_profile"] = "b1"
         manifest["features"] = ["context_reuse", "access_hints", "fail_fast"]
-    if variant in {"B2", "B2.1", "B2.2"}:
+    if variant in {"B2", "B2.1", "B2.2", "B2.3"}:
         manifest["default_profile"] = "b2"
         manifest["features"] = ["acceptance_first", "direct_bindings", "context_reuse", "context_interning",
             "access_hints", "scoped_tools", "task_budget", "fail_fast", "backend_precheck"]
         manifest["default_task_call_limit"] = 16
-    if variant in {"B2.1", "B2.2"}:
+    if variant in {"B2.1", "B2.2", "B2.3"}:
         manifest["features"].append("contract_registry")
-    if variant == "B2.2":
+    if variant in {"B2.2", "B2.3"}:
         manifest["features"].append("api_coordination")
         manifest["api_design_limits"] = {"proposals": 6, "logical_calls": 8, "same_failure_occurrences": 3}
+    if variant == "B2.3":
+        manifest["features"].extend(["diagnostics", "feature_runtime"])
     payload["submission-manifest.json"] = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode()
     output = output.resolve()
     if output.is_relative_to(ROOT / "infrastructure"):
@@ -233,7 +254,7 @@ def build(output: Path, variant: str = "B0") -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--variant", choices=("B0", "B1", "B2", "B2.1", "B2.2"), default="B0")
+    parser.add_argument("--variant", choices=("B0", "B1", "B2", "B2.1", "B2.2", "B2.3"), default="B0")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     output = args.output or ROOT / f"releases/webapp-builder-agent-{args.variant}.zip"
