@@ -11,6 +11,7 @@ from infrastructure.stages.backend.context import requirement_context, related_s
 from infrastructure.stages.backend.runtime import REGISTER_PATH, TEST_SUPPORT_PATH
 from infrastructure.stages.backend.testing import BackendChecks, require_green
 from infrastructure.utils.files import save_json
+from infrastructure.shared.agent.batching import enabled
 
 
 TEST_RULES = '''BATCH CONTRACT: task.apis contains several canonical APIs. Create EVERY supplied
@@ -33,6 +34,10 @@ Use one edit batch for coherent handler/registry/helper changes before requestin
 def implement_batches(arc_dir, tree, schema, contracts, model, console, max_turns,
                       max_tests, test_instructions, implementation_instructions):
     output = arc_dir.parent.resolve()
+    glue = {}
+    if enabled('contract_codegen'):
+        from infrastructure.shared.project.contract_codegen import prepare_contracts
+        glue = prepare_contracts(output, contracts)
     checks = BackendChecks(output)
     selection = SourceFiles(output, root='backend/src', tests_root='backend/tests')
     owners = {aid: [rid for rid in tree.leaves
@@ -45,7 +50,7 @@ def implement_batches(arc_dir, tree, schema, contracts, model, console, max_turn
     log_plan(output, '08', groups, len(records))
     targets = {aid: target_path(output, 'backend_test', aid) for aid in owners}
     paths = {aid: target_path(output, 'api', aid) for aid in owners}
-    report = {'status': 'RUNNING', 'mode': 'b4_backend_batches', 'requirements': {},
+    report = {'status': 'RUNNING', 'mode': 'b4_backend_batches', 'requirements': {}, 'contract_codegen': glue,
               'apis': {}, 'tests': {}, 'agents': {}, 'groups': []}
     accepted = []
     index = project_index(output, kinds=('schema', 'api', 'requirement', 'convention', 'file'),
@@ -80,7 +85,7 @@ def implement_batches(arc_dir, tree, schema, contracts, model, console, max_turn
                 allow_discovery=False, max_calls=setting('BATCH_CALLS', 48))
             entry['test_turns'] = generated['turns']
             regression = [targets[aid] for aid in [*accepted, *ids]]
-            workspace = selection.workspace(paths=[REGISTER_PATH, *[paths[aid] for aid in ids]],
+            workspace = selection.workspace(paths=[*([] if glue.get('managed_registry') else [REGISTER_PATH]), *[paths[aid] for aid in ids]],
                 references=[*regression, *sources])
             allow = lambda path: path.startswith('backend/src/') and editable_application_path(output, path)
             protect(workspace, allow)
@@ -98,11 +103,20 @@ def implement_batches(arc_dir, tree, schema, contracts, model, console, max_turn
             task.update(implementation_paths={aid: paths[aid] for aid in ids},
                         api_wiring={'registry': REGISTER_PATH, 'app': 'backend/src/app.ts',
                                     'server': 'backend/src/server.ts'})
+            rules = implementation_instructions + '\n' + IMPLEMENT_RULES
+            if glue.get('managed_registry'):
+                task['compiler_transport'] = {'registry': REGISTER_PATH,
+                    'types': 'backend/src/api/contract-types.ts', 'managed': True}
+                rules += '''\nTRANSPORT OVERRIDE: the compiler already registered every canonical route.
+The registry and contract types are READ-ONLY. Do not create routes in app.ts/server.ts
+or duplicate wrappers. Implement the supplied handle exports only, plus business helpers.
+The generated 501 handlers are honest TDD stubs; replace their business implementation,
+never accept 501 as the required outcome. Keep all canonical success/rejection semantics.'''
             try:
                 current = gate()
                 agent = {'turns': 0, 'checks': current}
             except (ValueError, RuntimeError) as error:
-                agent = run_file_agent(model, implementation_instructions + '\n' + IMPLEMENT_RULES,
+                agent = run_file_agent(model, rules,
                     task, workspace, gate, max_turns, console, f'API batch {number} / implementation',
                     feedback=getattr(error, 'feedback', {'error': str(error)}), feedback_filter=feedback_for(workspace, [selection], allow),
                     context_index=index, max_calls=setting('BATCH_CALLS', 48))

@@ -111,6 +111,8 @@ def implement_batches(arc_dir, design, model, console, report, checks, selection
                       max_turns, images, contexts, instructions):
     output = arc_dir.parent.resolve()
     backend = read_artifact(arc_dir, 'backend_apis.json')
+    from infrastructure.shared.project.contract_codegen import state as transport_state, CLIENT
+    transport = transport_state(output)
     records = [{'id': pid, 'page': page_context(design, pid)} for pid in design['pages']]
     groups = chunks(records, setting('PAGE_BATCH_SIZE', 4), setting('BATCH_CONTEXT_CHARS', 80000))
     log_plan(output, '10', groups, len(records))
@@ -146,7 +148,8 @@ The single-page fields above apply separately to every member of task.pages.'''
             files = [test_path(pid) for pid in [*accepted, *pids]]
             workspace = selection.workspace(paths=[paths[pid] for pid in pids],
                 references=[*files, 'frontend/src/ui-runtime.ts', *APPLICATION_ENTRYPOINTS,
-                            'frontend/package.json', 'frontend/tsconfig.json'])
+                            'frontend/package.json', 'frontend/tsconfig.json',
+                            *([CLIENT] if transport.get('managed_client') else [])])
             allow = lambda path: path.startswith('frontend/src/') and editable_application_path(output, path)
             protect(workspace, allow)
 
@@ -167,6 +170,11 @@ The single-page fields above apply separately to every member of task.pages.'''
                     'application_entrypoints': list(APPLICATION_ENTRYPOINTS),
                     'visual_references': {iid: images[iid] for pid in pids
                         for iid in design['pages'][pid]['images'] if iid in images}}
+            if transport.get('managed_client'):
+                task['contract_client'] = {'path': CLIENT,
+                    'usage': 'callApi(API_ID, {params, query, body, headers, signal}); returns canonical status/body/Headers',
+                    'rules': 'Reuse for JSON transport; handle canonical errors and network failures. No automatic retries. '
+                             'Use custom application helpers for non-JSON protocols. Generated files are read-only.'}
             try:
                 current = gate()
                 agent = {'turns': 0, 'checks': current}

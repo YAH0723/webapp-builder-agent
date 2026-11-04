@@ -24,6 +24,9 @@ def editable_sources(output: Path, root: str) -> list[str]:
 
 def editable_application_path(output, relative):
     """One ownership rule for existing and newly created application helpers."""
+    from infrastructure.shared.project.contract_codegen import managed
+    if managed(Path(output), relative):
+        return False
     templates = Path(__file__).resolve().parents[1] / "project/templates"
     if relative.startswith("frontend/src/"):
         return relative != "frontend/src/ui-runtime.ts"

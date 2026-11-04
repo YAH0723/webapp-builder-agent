@@ -116,6 +116,9 @@ def run_acceptance_batches(input_dir, arc_dir, schema, backend, ui, design, mode
                 references=[*regression, *ui_files, FIXTURE, 'frontend/src/ui-runtime.ts',
                             *APPLICATION_ENTRYPOINTS, 'frontend/package.json', 'frontend/tsconfig.json'])
             back.include(workspace, [*back.paths('api', apis), 'backend/src/api/register.ts'])
+            from infrastructure.shared.project.contract_codegen import state as current_transport
+            if current_transport(output).get('managed_registry'):
+                workspace.files.discard('backend/src/api/register.ts')
             allow = lambda path: path.startswith(('frontend/src/', 'backend/src/')) and editable_runtime_path(output, path)
             protect(workspace, allow)
 
@@ -153,6 +156,12 @@ def run_acceptance_batches(input_dir, arc_dir, schema, backend, ui, design, mode
                         'application_entrypoints': list(APPLICATION_ENTRYPOINTS),
                         'backend_entrypoints': {'registry': 'backend/src/api/register.ts',
                             'app': 'backend/src/app.ts', 'server': 'backend/src/server.ts'}}
+                    from infrastructure.shared.project.contract_codegen import state as transport_state, CLIENT
+                    if transport_state(output).get('managed_client'):
+                        repair_task['contract_client'] = {'path': CLIENT,
+                            'usage': 'Reuse callApi for canonical JSON requests; status/body preserve success and rejection cases. '
+                                     'Registry/client/types are read-only. Repair handlers and application state.'}
+                        workspace.files.add(CLIENT)
                     agent = run_file_agent(model, IMPLEMENT_RULES, repair_task, workspace, gate,
                         max_turns, console, f'Acceptance batch {number} / application repair',
                         feedback=getattr(error, 'feedback', {'error': str(error)}),

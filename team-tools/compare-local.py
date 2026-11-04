@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def compare(reports):
-    keys = ('kind', 'stage', 'scope', 'workload_sha256')
+    keys = ('kind', 'stage', 'scope', 'targets', 'workload_sha256')
     same = all(all(report.get(key) == reports[0].get(key) for key in keys) for report in reports)
     same = same and bool(reports[0].get('workload_sha256'))
     same = same and all(set(report.get('checks', {})) == set(reports[0].get('checks', {}))
