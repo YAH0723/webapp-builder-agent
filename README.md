@@ -59,5 +59,6 @@ npm start
 - [B1 效率优化与验证](docs/efficiency.md)
 - [B2 验收驱动工作流](docs/acceptance-first.md)
 - [通用契约与影响索引](docs/contracts.md)
+- [B2.2 共享 API 协调与有限修复](docs/api-design-recovery.md)
 
-参考实现固定版本：`d3da23e9897db84cfd37ce04a4ab5b38424ef399`。B0 保留该版本；本分支为 B2.1，在 B2 验收驱动流程上增加通用契约与显式依赖索引。收益与跨任务生成能力以实际评测为准。
+参考实现固定版本：`d3da23e9897db84cfd37ce04a4ab5b38424ef399`。B0 保留该版本；本分支为 B2.2，在验收驱动流程与通用契约索引上增加共享 API 协调、输出结构检查和重复失败处理。收益与跨任务生成能力以实际评测为准。

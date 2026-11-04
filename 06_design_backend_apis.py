@@ -20,6 +20,9 @@ from infrastructure.shared.agent.proposals import propose_json
 from infrastructure.shared.agent.tasks import TaskFailures
 from infrastructure.shared.agent.discovery import ContextIndex
 from infrastructure.shared.agent.conventions import CONVENTION_RULES, load_conventions, select_conventions, merge_conventions
+from infrastructure.shared.agent.efficiency import enabled
+from infrastructure.stages.backend.coordination import (APIDesignRecovery, COORDINATION_RULES,
+    RESULT_CONTRACT, compatibility, validate_response, validate_endpoints)
 
 
 INSTRUCTIONS = """Design complete backend APIs for the supplied leaf requirement and scenarios.
@@ -136,6 +139,7 @@ def design_backend_apis(arc_dir: Path, pause: bool = False, top_k: int = 6, max_
     if top_k < 1:
         raise ValueError("--top-k must be positive")
     console, retriever, model = DemoConsole(pause), ApiRetriever(), TextModel()
+    coordinated = enabled('api_coordination')
     conventions = load_conventions(arc_dir)
     # Parents organize requirements; they do not receive APIs or coverage checks.
     design = {"apis": {}, "requirements": {rid: [] for rid in tree.requirements if tree.children[rid]}}
@@ -177,10 +181,17 @@ def design_backend_apis(arc_dir: Path, pause: bool = False, top_k: int = 6, max_
                 "shared_conventions": select_conventions(conventions, fields=related, requirements=[rid]),
                 "retrieved_apis": retrieved["apis"], "api_inventory": list(retrieved["apis"]),
             }
+            if coordinated:
+                request.update(result_contract=RESULT_CONTRACT, api_inventory=list(design['apis']),
+                    api_compatibility=compatibility(design, obligations, rid, retrieved['apis']))
             def accept(response):
                 nonlocal conventions
+                if coordinated:
+                    validate_response(response, design)
                 updated = apply_decomposition(design, response, rid, obligations, tree=tree)
                 check_symbols(updated["apis"].values(), schema)
+                if coordinated:
+                    validate_endpoints(updated)
                 revised = merge_conventions(conventions, response, rid, related)
                 selected = {aid: updated["apis"][aid] for aid in updated["requirements"][rid]}
                 definitions = {aid: {key: api[key] for key in (
@@ -193,8 +204,11 @@ def design_backend_apis(arc_dir: Path, pause: bool = False, top_k: int = 6, max_
                 conventions = revised
                 return updated
 
-            updated, _ = propose_json(model, INSTRUCTIONS + "\n\n" + CONVENTION_RULES, request, accept, console,
-                f"Backend API design {rid}", max_attempts, context_index=ContextIndex(lambda: {"convention": conventions, "api": design["apis"], "schema": schema["entities"], "requirement": {key: requirement_context(tree, key) for key in tree.leaves}}))
+            updated, _ = propose_json(model, INSTRUCTIONS + "\n\n" + CONVENTION_RULES
+                + ('\n\n' + COORDINATION_RULES if coordinated else ''), request, accept, console,
+                f"Backend API design {rid}", min(max_attempts, 6) if coordinated else max_attempts,
+                context_index=ContextIndex(lambda: {"convention": conventions, "api": design["apis"], "schema": schema["entities"], "requirement": {key: requirement_context(tree, key) for key in tree.leaves}}),
+                **({'repair_policy': APIDesignRecovery(design, obligations, tree, rid), 'call_limit': 8} if coordinated else {}))
             design = updated
             save_json(arc_dir / "backend_apis.json", design)
             save_json(arc_dir / "shared_conventions.json", conventions)

@@ -18,6 +18,8 @@ B2 分支使用 `--variant B2`，生成 `releases/webapp-builder-agent-B2.zip`�
 
 通用契约索引版本使用 `--variant B2.1`，生成 `releases/webapp-builder-agent-B2.1.zip`。已发布的 B2 同样保持冻结；B2.1 使用 B2 profile，并默认启用 `ARC_B2_CONTRACT_REGISTRY`，见 [契约说明](contracts.md)。
 
+共享 API 协调版本使用 `--variant B2.2`，生成 `releases/webapp-builder-agent-B2.2.zip`。B2.1 保持冻结；B2.2 默认使用 B2 profile 并启用 `ARC_B2_API_COORDINATION`，见 [设计恢复说明](api-design-recovery.md)。
+
 ## 平台运行协议
 
 平台提供需求目录和应用输出目录，调用方式为：

@@ -22,6 +22,10 @@ class ProposalCallBudgetExceeded(RuntimeError):
     """Stop a design task whose internal context loop consumes its call budget."""
 
 
+class ProposalStagnation(RuntimeError):
+    """A task repeated a diagnosed failure even after a targeted recovery."""
+
+
 def response_feedback(error, response):
     """Describe an actual response-consumption failure, without adding design rules."""
     message = str(error)
@@ -41,7 +45,8 @@ def response_feedback(error, response):
     return feedback
 
 
-def propose_json(model, instructions, request, accept, console, label, max_attempts=10, context_index=None):
+def propose_json(model, instructions, request, accept, console, label, max_attempts=10, context_index=None,
+        repair_policy=None, call_limit=None):
     """Generate and repair a proposal within a finite total model-call budget."""
     if max_attempts < 1:
         raise ValueError("--max-attempts must be positive")
@@ -52,6 +57,10 @@ def propose_json(model, instructions, request, accept, console, label, max_attem
     discovery = DiscoverySession(context_index) if context_index is not None else None
     calls = 0
     limit = task_call_limit() if enabled("task_budget") else None
+    if call_limit is not None:
+        if call_limit < 1:
+            raise ValueError("call_limit must be positive")
+        limit = min(limit, call_limit) if limit is not None else call_limit
 
     def generate(prompt):
         nonlocal calls
@@ -70,6 +79,8 @@ def propose_json(model, instructions, request, accept, console, label, max_attem
                 prompt += "\nActual failure: " + correction["error"]
                 if correction.get("details"):
                     prompt += "\nRepair details:\n" + json.dumps(correction["details"], ensure_ascii=False, indent=2)
+                if correction.get("retry_guidance"):
+                    prompt += "\nRecovery action: " + correction["retry_guidance"]
             response = generate(prompt)
             while context_index is not None and isinstance(response, dict) and "context_request" in response:
                 query = response["context_request"]
@@ -85,8 +96,13 @@ def propose_json(model, instructions, request, accept, console, label, max_attem
         except RESPONSE_ERRORS as error:
             feedback = response_feedback(error, response)
             feedback["failed_attempt"] = attempt
+            if repair_policy is not None:
+                feedback = repair_policy(error, response, feedback)
             checkpoint(task=label, action=f"Reject design proposal {attempt}", status="REJECTED", details=feedback)
             console.show(f"{label} | Repair feedback", json.dumps(feedback, ensure_ascii=False, indent=2))
+            if feedback.get("stop_retrying"):
+                raise ProposalStagnation(f"{label} stopped after {attempt} rejected proposals: "
+                    "the diagnosed failure repeated after targeted recovery. " + feedback['error']) from error
             if attempt >= max_attempts:
                 raise RuntimeError(f"{label} exhausted {max_attempts} proposals: {feedback['error']}") from error
             request["correction"] = feedback
