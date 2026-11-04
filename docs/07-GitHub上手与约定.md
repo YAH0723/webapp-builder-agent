@@ -1,6 +1,6 @@
 # GitHub 上手与小组约定
 
-仓库：https://github.com/yah051222-spec/webapp-builder-agent
+仓库：https://github.com/YAH0723/webapp-builder-agent
 
 main 已推送，包含参考实现、计划、实验表、Issue 和 PR 模板。此文为建议工作规范；协作者邀请、看板、里程碑、分支保护及 CI 尚未配置。
 
@@ -15,7 +15,7 @@ main 已推送，包含参考实现、计划、实验表、Issue 和 PR 模板�
 组员接受邀请、安装 Git 并配置自己的提交身份后，在自己电脑的项目父目录运行：
 
 ```powershell
-git clone https://github.com/yah051222-spec/webapp-builder-agent.git
+git clone https://github.com/YAH0723/webapp-builder-agent.git
 cd webapp-builder-agent
 ```
 
