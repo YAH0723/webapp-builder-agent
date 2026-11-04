@@ -49,6 +49,10 @@ def synthesize_ui(arc_dir, tree, images, contexts, model, console, top_k=3, max_
     Show existing/retrieved pages, ask for an incremental proposal, and feed
     response-consumption errors back for repair. Save accepted ui_design.json
     updates; implementation and browser tests belong to step 10."""
+    from infrastructure.shared.agent.batching import enabled
+    if enabled('ui_design_batches'):
+        from infrastructure.stages.frontend.ui.batching import synthesize_batches
+        return synthesize_batches(arc_dir, tree, images, contexts, model, console, max_attempts)
     design, retriever = empty_design(), PageRetriever()
     for rid in tree.requirements:
         if tree.children[rid]:

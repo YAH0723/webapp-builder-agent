@@ -7,12 +7,12 @@ import re
 
 
 def enabled(feature):
-    profile = os.getenv('ARC_AGENT_PROFILE', 'b3').lower()
-    if profile not in {'b0', 'b3'}:
-        raise ValueError('ARC_AGENT_PROFILE must be b0 or b3 for this candidate')
+    profile = os.getenv('ARC_AGENT_PROFILE', 'b4').lower()
+    if profile not in {'b0', 'b3', 'b4'}:
+        raise ValueError('ARC_AGENT_PROFILE must be b0, b3 or b4')
     value = os.getenv('ARC_B3_' + feature.upper())
     if value is None:
-        return profile == 'b3'
+        return profile in {'b3', 'b4'}
     if value.lower() not in {'0', '1', 'false', 'true'}:
         raise ValueError('ARC_B3_' + feature.upper() + ' must be 0 or 1')
     return value.lower() in {'1', 'true'}

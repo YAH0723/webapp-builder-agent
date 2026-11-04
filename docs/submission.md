@@ -1,18 +1,18 @@
 # ARC-Bench 打包与提交
 
-## B0 基础包
+## B4 提交包
 
 在仓库根目录运行：
 
 ```sh
-uv run python team-tools/package-baseline.py
+uv run python team-tools/package-baseline.py --variant B4
 ```
 
-默认输出 `releases/webapp-builder-agent-B0.zip` 和同名 JSON 摘要。可用 `--output` 指定其他位置。
+默认输出 `releases/webapp-builder-agent-B4.zip` 和同名 JSON 摘要。可用 `--output` 指定新位置；已有发布包不会覆盖。先提交编译器改动，确保包内清单对应明确的 Git 提交。
 
-打包工具只收集 Git 管理的编译运行文件，并检查其与参考提交一致。ZIP 根目录包含 `main.py`、`requirements.txt`、阶段脚本、`infrastructure/`、README 和文件哈希清单，不包含本地环境文件、密钥、任务数据或日志。
+打包工具只收集 Git 管理的编译运行文件，并检查工作区与提交一致。ZIP 根目录包含 `main.py`、`requirements.txt`、阶段脚本、`infrastructure/`、README 和文件哈希清单，不包含本地环境文件、密钥、任务数据或日志。
 
-该工具用于未修改参考编译器的 B0；修改编译器后，应建立对应版本的打包规则。不要使用会携带 `.env` 的上游 `scripts/package.py` 提交本地配置。
+B0/B3 历史包使用其冻结分支或现有发布文件。本分支不会将 B4 编译器标记为历史版本。不要使用会携带 `.env` 的上游 `scripts/package.py` 提交本地配置。
 
 ## 平台运行协议
 

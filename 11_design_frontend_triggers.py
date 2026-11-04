@@ -19,6 +19,15 @@ def design_frontend_triggers(input_dir: Path, arc_dir: Path, pause: bool = False
     tree, _, backend, images, contexts = load_frontend_context(arc_dir, input_dir)
     ui = load_ui_design(arc_dir, tree)
     console = DemoConsole(pause)
+    from infrastructure.shared.agent.batching import enabled
+    if enabled('direct_bindings') and enabled('acceptance_first'):
+        from infrastructure.stages.backend.context import load_context
+        from infrastructure.stages.frontend.triggers.direct import plan_bindings
+        _, _, obligations = load_context(arc_dir)
+        result = plan_bindings(tree, backend, ui, obligations)
+        save_json(arc_dir / 'frontend_triggers.json', result)
+        console.show('Step 11 | Deterministic bindings', 'Original requirements joined to canonical UI/API contracts; no model call.')
+        return result
     if not ui["pages"]:
         result = empty_triggers(tree)
         save_json(arc_dir / "frontend_triggers.json", result)

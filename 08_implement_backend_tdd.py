@@ -143,6 +143,11 @@ def implement_backend_tdd(arc_dir: Path, pause: bool = False, max_turns: int = 1
     checks = BackendChecks(output)
     selection = SourceFiles(output, root="backend/src", tests_root="backend/tests")
     model = TextModel() if contracts["apis"] else None
+    from infrastructure.shared.agent.batching import enabled as batch_enabled
+    if batch_enabled('backend_batches'):
+        from infrastructure.stages.backend.batching import implement_batches
+        return implement_batches(arc_dir, tree, schema, contracts, model, console, max_turns,
+            max_tests, TEST_INSTRUCTIONS, IMPLEMENT_INSTRUCTIONS)
     context_index = project_index(output,
         kinds=("schema", "api", "requirement", "test_requirement", "convention", "file"),
         file_roots=("backend/src", "backend/tests"))

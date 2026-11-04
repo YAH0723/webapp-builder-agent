@@ -27,6 +27,11 @@ def implement_frontend_triggers(input_dir: Path, arc_dir: Path, pause: bool = Fa
             save_json(arc_dir / "frontend_e2e.json", report)
             return report
         model = TextModel()
+        from infrastructure.shared.agent.batching import enabled
+        if enabled('acceptance_first'):
+            from infrastructure.stages.frontend.triggers.acceptance_batches import run_acceptance_batches
+            return run_acceptance_batches(input_dir, arc_dir, schema, backend, ui,
+                interactions, model, DemoConsole(pause), max_turns)
         result = run_trigger_tdd(arc_dir, tree, schema, backend, ui, interactions, images,
             contexts, model, DemoConsole(pause), report, max_turns, max_tests)
         acceptance = run_independent_acceptance(input_dir, arc_dir, schema, backend, ui, interactions,

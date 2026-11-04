@@ -85,6 +85,11 @@ def implement_ui(arc_dir: Path, design: dict, model, console, report: dict, max_
     install_dependencies(output)
     checks = FrontendChecks(output)
     checks.install_browser()
+    from infrastructure.shared.agent.batching import enabled
+    if enabled('ui_implementation_batches') and design['pages']:
+        from infrastructure.stages.frontend.ui.batching import implement_batches
+        return implement_batches(arc_dir, design, model, console, report, checks,
+            SourceFiles(output, design), max_turns, images or {}, requirement_contexts or {}, INSTRUCTIONS)
     checkpoint(output, stage="10", task="runtime", action="Prepare presentation adapter and browser tests",
         details={"pages": list(design["pages"])})
     accepted = []

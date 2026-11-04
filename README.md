@@ -49,12 +49,15 @@ npm start
 | `infrastructure/stages/` | 需求、数据库、后端、前端处理 |
 | `infrastructure/shared/` | 模型、检索、编辑循环、项目模板 |
 | `tests/` | 编译器及工具测试 |
-| `team-tools/package-baseline.py` | B0 / B3 干净打包工具 |
+| `team-tools/package-baseline.py` | 当前 B4 干净打包工具；旧版本使用对应分支 |
+| `team-tools/check-stage.py` | 不调用模型的本地单阶段检查 |
 
 ## 提交与协作
 
 - [ARC-Bench 打包与提交](docs/submission.md)
 - [贡献指南](CONTRIBUTING.md)
 - [B3 成组流程实现与成本控制](docs/b3-flow-batches.md)
+- [B4 批量生成与单套独立验收](docs/b4-batched-generation.md)
+- [本地单步检查](docs/local-validation.md)
 
-参考实现固定版本：`d3da23e9897db84cfd37ce04a4ab5b38424ef399`。本分支为基于 B0 编译器的 B3 候选：保留独立最终验收，成组实现相关前后端流程，并加入精确去重、权限一致的工具提示及有限修复。实际综合分与费用收益需平台评测验证。
+参考实现固定版本：`d3da23e9897db84cfd37ce04a4ab5b38424ef399`。本分支为 B4 候选：对后端、UI 设计与页面实现成组生成，以确定性接口绑定替代重复交互设计，并使用一套独立原始需求验收。保留最终回归、精确去重、工具权限和有限修复。实际综合分与费用收益需平台评测验证。
