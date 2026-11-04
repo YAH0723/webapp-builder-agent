@@ -22,6 +22,7 @@ from infrastructure.stages.frontend.ui.runtime import APPLICATION_ENTRYPOINTS
 from infrastructure.stages.frontend.ui.testing import FrontendChecks, require_green, test_path as ui_test_path
 from infrastructure.utils.files import save_json
 from infrastructure.shared.project.git import checkpoint
+from infrastructure.shared.agent.efficiency import enabled
 from infrastructure.stages.frontend.triggers.direct import DIRECT_IMPLEMENT_INSTRUCTIONS
 
 INSTRUCTIONS = '''Write independent final acceptance tests for ONE original requirement.
@@ -96,7 +97,8 @@ def run_independent_acceptance(input_dir, arc_dir, schema, backend, ui, design, 
     backend_selection = SourceFiles(output, root='backend/src', tests_root='backend/tests')
     context_index = project_index(output,
         kinds=('schema', 'api', 'page', 'ui_element', 'ui_data', 'trigger', 'requirement',
-            'test_requirement', 'convention', 'file'),
+            'test_requirement', 'convention', 'file',
+            *(('contract', 'dependency') if enabled('contract_registry') else ())),
         file_roots=('frontend/src', 'frontend/tests', 'backend/src', 'backend/tests'))
     accepted = []
     verified_process = set()
@@ -121,6 +123,9 @@ def run_independent_acceptance(input_dir, arc_dir, schema, backend, ui, design, 
                 'api_interfaces': {aid: {key: value for key, value in api.items()
                     if key in ('signature', 'request', 'response')} for aid, api in apis.items()},
                 'schema': related_schema(schema, apis.values())}
+            contract_context = design.get('bindings', {}).get(rid, {}).get('contract_context')
+            if contract_context and enabled('contract_registry'):
+                task['contract_context'] = contract_context
             if not task['ui_interfaces']:
                 entry.update(status='FAILED', error='No UI interface available for independent requirement acceptance; not verified')
                 continue

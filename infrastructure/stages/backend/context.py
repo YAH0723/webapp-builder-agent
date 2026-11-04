@@ -19,7 +19,9 @@ def load_context(arc_dir: Path):
 
 def requirement_context(tree, rid: str) -> dict:
     """Return one requirement with its own structured steps and their concatenated teaching/model context."""
-    return {**tree.requirements[rid], "steps": [tree.steps[sid] for sid in tree.own_steps[rid]]}
+    dependencies = getattr(tree, 'dependencies', {}).get(rid, [])
+    return {**tree.requirements[rid], "steps": [tree.steps[sid] for sid in tree.own_steps[rid]],
+        **({'depends_on': list(dependencies)} if dependencies else {})}
 
 
 def api_requirement_uses(tree, allocations: dict, aid: str) -> list[dict]:

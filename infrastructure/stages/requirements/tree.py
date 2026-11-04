@@ -18,6 +18,7 @@ class RequirementTree:
         self.children = {}
         self.own_steps = {}
         self.postorder = []
+        self.dependencies = {}
 
         def identifier(node, kind):
             """Read a requirement, scenario or step ID from the JSON document."""
@@ -31,6 +32,10 @@ class RequirementTree:
         def visit(node):
             """Index one requirement and its own steps, recurse into children, then append its postorder ID."""
             rid = identifier(node, "requirement")
+            dependencies = node.get('depends_on', [])
+            if not isinstance(dependencies, list) or any(not isinstance(value, str) for value in dependencies):
+                raise ValueError('depends_on must be a list of requirement IDs for ' + str(rid))
+            self.dependencies[rid] = list(dict.fromkeys(dependencies))
             description = node.get("description", "")
             if isinstance(description, dict):
                 description = description.get("text", "")

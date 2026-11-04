@@ -18,14 +18,19 @@ from infrastructure.shared.agent.efficiency import enabled
 def design_frontend_triggers(input_dir: Path, arc_dir: Path, pause: bool = False, max_attempts: int = 10) -> dict:
     if max_attempts < 1:
         raise ValueError("--max-attempts must be positive")
-    tree, _, backend, images, contexts = load_frontend_context(arc_dir, input_dir)
+    tree, schema, backend, images, contexts = load_frontend_context(arc_dir, input_dir)
     ui = load_ui_design(arc_dir, tree)
     console = DemoConsole(pause)
     if enabled('direct_bindings') and enabled('acceptance_first'):
         from infrastructure.stages.frontend.triggers.direct import plan_bindings
         from infrastructure.stages.database.obligations.records import normalize_obligations
         obligations = normalize_obligations(read_artifact(arc_dir, 'db_obligations.json'), tree)
-        result = plan_bindings(tree, backend, ui, obligations)
+        registry = None
+        if enabled('contract_registry'):
+            from infrastructure.shared.contracts import ContractRegistry
+            registry = ContractRegistry(tree, schema, backend, ui)
+            save_json(arc_dir / 'contracts.json', registry.export())
+        result = plan_bindings(tree, backend, ui, obligations, registry=registry)
         save_json(arc_dir / 'frontend_triggers.json', result)
         console.show('Step 11 | Validated direct bindings',
             f"Requirements: {len(result['bindings'])}; model calls: 0. Original requirements drive implementation.")

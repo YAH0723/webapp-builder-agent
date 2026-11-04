@@ -16,6 +16,8 @@ uv run python team-tools/package-baseline.py
 
 B2 分支使用 `--variant B2`，生成 `releases/webapp-builder-agent-B2.zip`。B0/B1 应在各自冻结版本重新打包；B2 的 profile 与单项开关见 [工作流说明](acceptance-first.md)。
 
+通用契约索引版本使用 `--variant B2.1`，生成 `releases/webapp-builder-agent-B2.1.zip`。已发布的 B2 同样保持冻结；B2.1 使用 B2 profile，并默认启用 `ARC_B2_CONTRACT_REGISTRY`，见 [契约说明](contracts.md)。
+
 ## 平台运行协议
 
 平台提供需求目录和应用输出目录，调用方式为：

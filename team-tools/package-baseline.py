@@ -12,6 +12,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM = "d3da23e9897db84cfd37ce04a4ab5b38424ef399"
 B1_SOURCE = "4a7d3df00d009d95f0a2b85bb7890d30e4276c89"
+B2_SOURCE = "c1cde93a4f73b19500a14b44d9438459fb2643a5"
 README = """# WebApp Builder Agent: baseline B0
 
 Unoptimized reference requirement compiler, packaged for ARC-Bench Web tasks.
@@ -102,6 +103,21 @@ Inspect .arc/compilation.json and .arc/frontend_e2e.json, not just exit code.
 """
 
 
+README_B21 = README_B2 + """
+
+B2.1 adds a task-independent contract registry and lightweight requirement index.
+.arc/contracts.json links requirement IDs, schema fields, API definitions and pages.
+Explicit depends_on IDs are preserved and checked for unknown references/cycles;
+containment is not treated as an execution dependency. Static validation is
+report-only. The original runtime gates remain authoritative.
+Repair context can retrieve contract/dependency records and use actual failed
+test paths to find related requirements and sources. Impact is conservative;
+it is not permission to skip tests or a causal diagnosis.
+ARC_B2_CONTRACT_REGISTRY=0 disables this layer. Execution profile remains b2.
+Multi-domain mechanism tests do not establish multi-task generation quality.
+"""
+
+
 def git(*arguments: str) -> bytes:
     return subprocess.check_output(["git", *arguments], cwd=ROOT)
 
@@ -116,8 +132,8 @@ def compiler_path(name: str) -> bool:
 
 
 def build(output: Path, variant: str = "B0") -> dict:
-    if variant not in {"B0", "B1", "B2"}:
-        raise ValueError("variant must be B0, B1 or B2")
+    if variant not in {"B0", "B1", "B2", "B2.1"}:
+        raise ValueError("variant must be B0, B1, B2 or B2.1")
     names = sorted(name.decode("utf-8") for name in git("ls-files", "-z").split(b"\0")
         if name and compiler_path(name.decode("utf-8")))
     payload = {}
@@ -142,11 +158,14 @@ def build(output: Path, variant: str = "B0") -> dict:
         raise ValueError("B0 requires unchanged reference compiler sources. Review changes before packaging.")
     if variant == "B1" and git("diff", B1_SOURCE, "--", *names).strip():
         raise ValueError("B1 is frozen at " + B1_SOURCE + "; use --variant B2 for the revised compiler.")
+    if variant == "B2" and git("diff", B2_SOURCE, "--", *names).strip():
+        raise ValueError("B2 is frozen at " + B2_SOURCE + "; use --variant B2.1 for the contract-index version.")
     if git("diff", "HEAD", "--", *names).strip():
         raise ValueError("Commit runtime changes before packaging so source_commit identifies the shipped code.")
-    payload["README.md"] = {"B0": README, "B1": README_B1, "B2": README_B2}[variant].encode("utf-8")
+    payload["README.md"] = {"B0": README, "B1": README_B1, "B2": README_B2, "B2.1": README_B21}[variant].encode("utf-8")
     manifest = {
-        "variant": {"B0": "B0-reference", "B1": "B1-efficiency", "B2": "B2-acceptance-first"}[variant],
+        "variant": {"B0": "B0-reference", "B1": "B1-efficiency", "B2": "B2-acceptance-first",
+            "B2.1": "B2.1-generic-contracts"}[variant],
         "source_commit": git("rev-parse", "HEAD").decode().strip(),
         "upstream_commit": UPSTREAM, "compiler_unchanged": unchanged,
         "entrypoint": "main.py", "default_model": "deepseek-flash",
@@ -155,11 +174,13 @@ def build(output: Path, variant: str = "B0") -> dict:
     if variant == "B1":
         manifest["default_profile"] = "b1"
         manifest["features"] = ["context_reuse", "access_hints", "fail_fast"]
-    if variant == "B2":
+    if variant in {"B2", "B2.1"}:
         manifest["default_profile"] = "b2"
         manifest["features"] = ["acceptance_first", "direct_bindings", "context_reuse", "context_interning",
             "access_hints", "scoped_tools", "task_budget", "fail_fast", "backend_precheck"]
         manifest["default_task_call_limit"] = 16
+    if variant == "B2.1":
+        manifest["features"].append("contract_registry")
     payload["submission-manifest.json"] = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode()
     output = output.resolve()
     if output.is_relative_to(ROOT / "infrastructure"):
@@ -185,7 +206,7 @@ def build(output: Path, variant: str = "B0") -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--variant", choices=("B0", "B1", "B2"), default="B0")
+    parser.add_argument("--variant", choices=("B0", "B1", "B2", "B2.1"), default="B0")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     output = args.output or ROOT / f"releases/webapp-builder-agent-{args.variant}.zip"

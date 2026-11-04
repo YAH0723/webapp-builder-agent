@@ -23,7 +23,7 @@ Shared fixtures and independent tests stay protected. Explain genuine scope bloc
 """
 
 
-def plan_bindings(tree, backend, ui, obligations):
+def plan_bindings(tree, backend, ui, obligations, registry=None):
     """Keep original upstream obligation checks; do not ask an LLM to restate joins."""
     result = empty_triggers(tree)
     result.update(mode='direct_bindings', bindings={})
@@ -41,4 +41,6 @@ def plan_bindings(tree, backend, ui, obligations):
                 obligations, complete=False, tree=tree)
         result['bindings'][rid] = {'pages': sorted(pages), 'apis': list(ids),
             'steps': list(tree.own_steps[rid])}
+        if registry is not None:
+            result['bindings'][rid]['contract_context'] = registry.context_for(rid)
     return result

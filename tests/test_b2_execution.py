@@ -167,7 +167,7 @@ class UnifiedWorkflowTests(unittest.TestCase):
                 require_coverage({**result, 'skipped': 1}, files, Path(directory))
 
     def fixture(self, root, *, broken=False, missing=False, repair_fails=False):
-        tree = SimpleNamespace(leaves=['REQ-A', 'REQ-B'])
+        tree = RequirementTree({'id': 'ROOT', 'children': [{'id': 'REQ-A'}, {'id': 'REQ-B'}]})
         ui, backend = {'pages': {}, 'elements': {}, 'requirements': {}}, {'apis': {}, 'requirements': {}}
         marker = root / 'frontend/src/state.ts'
         save_text(marker, 'broken' if broken else 'fixed')

@@ -180,6 +180,10 @@ def project_index(output, *, kinds, file_roots=()):
 
     def records():
         result = {}
+        if 'contract' in kinds:
+            result['contract'] = artifact('contracts.json', {'contracts': {}})['contracts']
+        if 'dependency' in kinds:
+            result['dependency'] = artifact('contracts.json', {'requirements': {}})['requirements']
         backend_tests = 'test_requirement' in kinds and any(root.startswith('backend/') for root in file_roots)
         frontend_tests = 'test_requirement' in kinds and any(root.startswith('frontend/') for root in file_roots)
         if 'schema' in kinds:

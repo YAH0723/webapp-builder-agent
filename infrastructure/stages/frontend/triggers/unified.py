@@ -1,9 +1,13 @@
 """B2: one requirement-grounded test suite drives implementation and final acceptance."""
 
+import json
+
 from infrastructure.shared.agent.context import SourceFiles
 from infrastructure.shared.agent.discovery import project_index
+from infrastructure.shared.agent.efficiency import enabled
 from infrastructure.shared.agent.loop import run_file_agent
 from infrastructure.shared.agent.recovery import complete_report, final_checks, implementation_task
+from infrastructure.shared.contracts import ContractRegistry
 from infrastructure.shared.project.dependencies import install_dependencies
 from infrastructure.shared.project.entrypoints import selected_path
 from infrastructure.stages.backend.testing import BackendChecks, require_green as require_backend_green
@@ -40,6 +44,13 @@ def run_acceptance_first(input_dir, arc_dir, tree, schema, backend, ui, design,
     install_dependencies(output)
     checks, ui_checks, api_checks = E2EChecks(output), FrontendChecks(output), BackendChecks(output)
     checks.install_browser()
+    registry = None
+    if enabled('contract_registry'):
+        registry = ContractRegistry(tree, schema, backend, ui)
+        save_json(arc_dir / 'contracts.json', registry.export())
+        design = {**design, 'bindings': {rid: {
+            **design.get('bindings', {}).get(rid, {}), 'contract_context': registry.context_for(rid)}
+            for rid in tree.leaves}}
     console.show('B2 | Acceptance-first integration',
         'Generate original-requirement acceptance once, implement against it, then run complete final regression.')
     acceptance = run_independent_acceptance(input_dir, arc_dir, schema, backend, ui, design,
@@ -71,12 +82,17 @@ def run_acceptance_first(input_dir, arc_dir, tree, schema, backend, ui, design,
     if any(item['status'] == 'FAILED' for item in verification.values()) and all((output / f).is_file() for f in files):
         selection = SourceFiles(output, ui)
         backend_selection = SourceFiles(output, root='backend/src', tests_root='backend/tests')
-        workspace = selection.workspace(paths=APPLICATION_ENTRYPOINTS,
+        localization = locate_failures(verification, tree, backend, ui, output, registry)
+        related = localization.get('related', {})
+        workspace = selection.workspace(paths=[*APPLICATION_ENTRYPOINTS,
+                *selection.paths('page', related.get('pages', []))],
             references=[FIXTURE, 'backend/tests/support/context.ts', 'frontend/src/ui-runtime.ts',
                 'frontend/package.json', 'frontend/tsconfig.json'])
+        backend_selection.include(workspace, backend_selection.paths('api', related.get('apis', [])))
         lock_application_repair(workspace)
         index = project_index(output, kinds=('schema', 'api', 'page', 'ui_element', 'ui_data',
-            'trigger', 'requirement', 'test_requirement', 'convention', 'file'),
+            'trigger', 'requirement', 'test_requirement', 'convention', 'file',
+            *(('contract', 'dependency') if enabled('contract_registry') else ())),
             file_roots=('frontend/src', 'frontend/tests', 'backend/src', 'backend/tests'))
 
         def feedback(value):
@@ -103,7 +119,8 @@ def run_acceptance_first(input_dir, arc_dir, tree, schema, backend, ui, design,
             run_file_agent(model, DIRECT_IMPLEMENT_INSTRUCTIONS + '\nRepair the full-regression failures. All tests are read-only. '
                 'Use original requirement evidence before changing shared behavior; preserve all accepted workflows.',
                 {'task': 'final_regression_repair', 'requirement_ids': list(tree.leaves),
-                    'acceptance_suites': files, 'application_entrypoints': list(APPLICATION_ENTRYPOINTS)},
+                    'acceptance_suites': files, 'application_entrypoints': list(APPLICATION_ENTRYPOINTS),
+                    'failure_context': localization},
                 workspace, gate, min(max_turns, 4), console, 'B2 / final regression repair',
                 feedback=verification, feedback_filter=feedback, context_index=index)
             repair_entry['status'] = 'GREEN'
@@ -128,3 +145,24 @@ def run_acceptance_first(input_dir, arc_dir, tree, schema, backend, ui, design,
     save_json(arc_dir / 'independent_acceptance.json', acceptance)
     save_json(arc_dir / 'frontend_e2e.json', result)
     return result
+
+
+def locate_failures(verification, tree, backend, ui, output, registry):
+    """Use actual failure paths, not the inventory of passing files, as roots."""
+    evidence = []
+    for check in verification.values():
+        if check.get('status') != 'FAILED':
+            continue
+        raw = check.get('result')
+        if raw:
+            evidence.extend([raw.get('failures', []), raw.get('errors', [])])
+        else:
+            evidence.append(check.get('error', ''))
+    text = json.dumps(evidence, ensure_ascii=False).replace('\\\\', '/').replace('\\', '/')
+    roots = [rid for rid in tree.leaves if acceptance_path(rid).removeprefix('frontend/tests/e2e/') in text]
+    apis = [aid for aid in backend.get('apis', {})
+        if (path := selected_path(output, 'backend_test', aid)) and path in text]
+    pages = [pid for pid in ui.get('pages', {}) if ui_test_path(pid).removeprefix('frontend/') in text]
+    related = registry.impact(requirements=roots, apis=apis, pages=pages) if registry else {}
+    return {'roots': sorted(roots), 'related': related,
+        'basis': 'failed reporter paths and declared contract links; conservative, not a causal proof'}
