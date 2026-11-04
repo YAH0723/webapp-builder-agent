@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from infrastructure.stages.frontend.triggers.e2e_runtime import RUNNER
 from infrastructure.stages.frontend.ui.testing import FrontendChecks, parse_playwright_result
 from infrastructure.shared.project.entrypoints import selected_path
+from infrastructure.shared.agent.efficiency import enabled
 
 
 def test_path(rid, output=None):
@@ -44,7 +45,8 @@ class E2EChecks(FrontendChecks):
             env = {**os.environ, "ARC_E2E_TEMP_ROOT": temporary}
             print("Playwright E2E | real backend + isolated database | " + ", ".join(files), flush=True)
             try:
-                result = self.execute([RUNNER, *files], env=env)
+                options = ["--max-failures=1"] if enabled("fail_fast") else []
+                result = self.execute([RUNNER, *files, *options], env=env)
             except (ValueError, RuntimeError, OSError) as error:
                 return {"returncode": 1, "output": str(error), "errors": [str(error)],
                     "passed": 0, "failed": 0, "files": {}}

@@ -49,11 +49,12 @@ npm start
 | `infrastructure/stages/` | 需求、数据库、后端、前端处理 |
 | `infrastructure/shared/` | 模型、检索、编辑循环、项目模板 |
 | `tests/` | 编译器及工具测试 |
-| `team-tools/package-baseline.py` | B0 干净打包工具 |
+| `team-tools/package-baseline.py` | B0/B1 干净打包工具 |
 
 ## 提交与协作
 
 - [ARC-Bench 打包与提交](docs/submission.md)
 - [贡献指南](CONTRIBUTING.md)
+- [B1 效率优化与验证](docs/efficiency.md)
 
-参考实现固定版本：`d3da23e9897db84cfd37ce04a4ab5b38424ef399`。当前 B0 编译运行代码保持该版本，优化结果以实际评测为准。
+参考实现固定版本：`d3da23e9897db84cfd37ce04a4ab5b38424ef399`。B0 保留该版本；B1 增加上下文复用、文件权限提示和 E2E 快速失败反馈，优化结果以实际评测为准。

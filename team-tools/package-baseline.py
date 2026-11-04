@@ -1,4 +1,4 @@
-"""Build an ARC-Bench ZIP from compiler sources, without local secrets or data."""
+"""Build a versioned ARC-Bench agent ZIP without local secrets or task data."""
 
 import argparse
 import hashlib
@@ -40,6 +40,34 @@ CLI can finish with code 0 even when compilation.json records stage failures;
 inspect compilation and platform logs, not only the process exit status.
 """
 
+README_B1 = """# WebApp Builder Agent: B1 efficient execution
+
+Based on requirement-compilation-structure revision
+d3da23e9897db84cfd37ce04a4ab5b38424ef399.
+Source: https://github.com/YAH0723/webapp-builder-agent
+
+Entry point:
+python3 main.py REQUIREMENTS_DIRECTORY --output-dir APPLICATION_DIRECTORY
+Install dependencies with pip install -r requirements.txt.
+Runtime also needs Node.js 22.12+, npm, Git and Bash.
+
+B1 removes exact duplicate context, advertises restricted file access and stops
+internal E2E execution after the first failed test. Failed/skipped acceptance
+is not successful; an all-passing run still executes the complete selected suite.
+The official evaluator and all 13 generation stages remain in place.
+
+Default profile: b1. ARC_AGENT_PROFILE=b0 disables the B1 mechanisms for comparison.
+Independent feature switches: ARC_B1_CONTEXT_REUSE, ARC_B1_ACCESS_HINTS,
+ARC_B1_FAIL_FAST (0 or 1). These are runtime settings, never bundled secrets.
+Context size telemetry is saved to .arc/b1_context.jsonl; it counts characters,
+not actual model tokens or monetary cost.
+
+Model default remains deepseek-flash. OPENAI_BASE_URL and OPENAI_API_KEY are
+supplied by the platform. No .env file, key, task data or local logs are bundled.
+Offline mechanism checks do not establish an official ARC-Bench score or cost reduction.
+Inspect .arc/compilation.json as well as the process exit status.
+"""
+
 
 def git(*arguments: str) -> bytes:
     return subprocess.check_output(["git", *arguments], cwd=ROOT)
@@ -54,7 +82,9 @@ def compiler_path(name: str) -> bool:
     )
 
 
-def build(output: Path) -> dict:
+def build(output: Path, variant: str = "B0") -> dict:
+    if variant not in {"B0", "B1"}:
+        raise ValueError("variant must be B0 or B1")
     names = sorted(name.decode("utf-8") for name in git("ls-files", "-z").split(b"\0")
         if name and compiler_path(name.decode("utf-8")))
     payload = {}
@@ -75,15 +105,21 @@ def build(output: Path) -> dict:
     if not required.issubset(payload):
         raise ValueError(f"Missing runtime files: {required - payload.keys()}")
     unchanged = not git("diff", UPSTREAM, "--", *names).strip()
-    if not unchanged:
+    if variant == "B0" and not unchanged:
         raise ValueError("B0 requires unchanged reference compiler sources. Review changes before packaging.")
-    payload["README.md"] = README.encode("utf-8")
+    if git("diff", "HEAD", "--", *names).strip():
+        raise ValueError("Commit runtime changes before packaging so source_commit identifies the shipped code.")
+    payload["README.md"] = (README if variant == "B0" else README_B1).encode("utf-8")
     manifest = {
-        "variant": "B0-reference", "source_commit": git("rev-parse", "HEAD").decode().strip(),
+        "variant": "B0-reference" if variant == "B0" else "B1-efficiency",
+        "source_commit": git("rev-parse", "HEAD").decode().strip(),
         "upstream_commit": UPSTREAM, "compiler_unchanged": unchanged,
         "entrypoint": "main.py", "default_model": "deepseek-flash",
         "files": {name: hashlib.sha256(data).hexdigest() for name, data in sorted(payload.items())},
     }
+    if variant == "B1":
+        manifest["default_profile"] = "b1"
+        manifest["features"] = ["context_reuse", "access_hints", "fail_fast"]
     payload["submission-manifest.json"] = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode()
     output = output.resolve()
     if output.is_relative_to(ROOT / "infrastructure"):
@@ -102,12 +138,15 @@ def build(output: Path) -> dict:
     summary = {"archive": str(output), "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
         "size_bytes": output.stat().st_size, "file_count": len(payload),
         "source_commit": manifest["source_commit"], "compiler_unchanged": unchanged,
-        "default_model": manifest["default_model"]}
+        "default_model": manifest["default_model"], "variant": manifest["variant"]}
     output.with_suffix(".json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     return summary
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT / "releases/webapp-builder-agent-B0.zip")
-    print(json.dumps(build(parser.parse_args().output), ensure_ascii=False, indent=2))
+    parser.add_argument("--variant", choices=("B0", "B1"), default="B0")
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    output = args.output or ROOT / f"releases/webapp-builder-agent-{args.variant}.zip"
+    print(json.dumps(build(output, args.variant), ensure_ascii=False, indent=2))

@@ -4,6 +4,7 @@ import json
 
 from infrastructure.shared.agent.discovery import DISCOVERY_RULES, DiscoverySession
 from infrastructure.shared.agent.conventions import task_conventions
+from infrastructure.shared.agent.efficiency import enabled
 
 from infrastructure.shared.agent.tools import FileTools
 from infrastructure.shared.agent.tools.protocol import FILE_TOOL_RULES
@@ -57,6 +58,9 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
                             break
                 request = {"task": files.task_state(task), "files": files.state(), "feedback": feedback,
                     "context_kinds": list(index.records()) if index is not None else [], "tools": files.schemas()}
+                if enabled("access_hints") and files.readable is not None:
+                    request["file_access"] = {"readable_paths": sorted(files.readable),
+                        "notice": "Read only these paths. Use supplied contracts instead of protected implementation sources."}
                 if read_files:
                     request["read_files"] = read_files
                 if discovery.evidence:

@@ -12,7 +12,7 @@ uv run python team-tools/package-baseline.py
 
 打包工具只收集 Git 管理的编译运行文件，并检查其与参考提交一致。ZIP 根目录包含 `main.py`、`requirements.txt`、阶段脚本、`infrastructure/`、README 和文件哈希清单，不包含本地环境文件、密钥、任务数据或日志。
 
-该工具用于未修改参考编译器的 B0；修改编译器后，应建立对应版本的打包规则。不要使用会携带 `.env` 的上游 `scripts/package.py` 提交本地配置。
+默认 B0 要求编译器与固定参考版本一致；B1 使用 `--variant B1` 打包，并在清单中记录当前源码提交号。编译运行代码须先提交，避免包内容与提交号不一致。不要使用会携带 `.env` 的上游 `scripts/package.py` 提交本地配置。
 
 ## 平台运行协议
 
