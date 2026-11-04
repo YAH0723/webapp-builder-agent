@@ -146,7 +146,7 @@ def design_backend_apis(arc_dir: Path, pause: bool = False, top_k: int = 6, max_
     # --- Extension point 06A: leaf order and reusable API discovery ------------
     failures = TaskFailures(arc_dir, "06_design_backend_apis", console)
     save_json(arc_dir / "backend_apis.json", design)
-    for number, rid in enumerate(tree.leaves, 1):
+    for number, rid in failures.iterate(tree.leaves):
         with failures.task(rid):
             context = requirement_context(tree, rid)
             required = obligations["requirements"][rid]

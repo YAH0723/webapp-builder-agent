@@ -8,6 +8,8 @@ from infrastructure.utils.presentation.console import show_panel
 from infrastructure.utils.presentation.logging import console_log
 from infrastructure.utils.files import save_json
 from infrastructure.shared.project.git import checkpoint
+from infrastructure.shared.agent.efficiency import enabled
+from infrastructure.shared.agent.service_recovery import check_prerequisites, PrerequisiteBlocked
 
 
 class Compiler:
@@ -31,6 +33,8 @@ class Compiler:
         try:
             with console_log(self.output_dir, stage=self.current_stage,
                     model_log=self.model_log, debug_model_io=self.model_log):
+                if enabled('service_recovery'):
+                    check_prerequisites(module, self.arc_dir)
                 result = getattr(import_module(module), function)(*arguments, **options)
         except KeyboardInterrupt as error:
             self.report["status"] = "INTERRUPTED"
@@ -44,6 +48,8 @@ class Compiler:
                 "error_type": type(error).__name__, "traceback": traceback.format_exc()}
             if getattr(error, "failures", None):
                 result.update(status="COMPLETED_WITH_FAILURES", failures=error.failures)
+            if isinstance(error, PrerequisiteBlocked):
+                result['status'] = 'BLOCKED'
             show_panel("[FAILED; continuing] " + module,
                 result["error"] + "\nAccepted artifacts remain available. Attempt the next pass.", tone="error")
         status = result.get("status", "GREEN") if isinstance(result, dict) else "GREEN"
@@ -91,8 +97,9 @@ class Compiler:
             "12_implement_frontend_tdd", "implement_frontend_triggers", self.input_dir, self.arc_dir)
         self.current_stage = None
         incomplete = [stage for stage, result in self.report["stages"].items()
-            if result["status"] in {"FAILED", "COMPLETED_WITH_FAILURES"}]
-        self.report["status"] = "COMPLETED_WITH_FAILURES" if incomplete else "GREEN"
+            if result["status"] in {"FAILED", "COMPLETED_WITH_FAILURES", "BLOCKED"}]
+        blocked = any(result['status'] == 'BLOCKED' for result in self.report['stages'].values())
+        self.report["status"] = 'BLOCKED' if blocked else ("COMPLETED_WITH_FAILURES" if incomplete else "GREEN")
         save_json(self.arc_dir / "compilation.json", self.report)
         checkpoint(self.output_dir, stage="compiler", task="pipeline", action="Publish final compilation report",
             status=self.report["status"], details={"stages": self.report["stages"], "incomplete_stages": incomplete})

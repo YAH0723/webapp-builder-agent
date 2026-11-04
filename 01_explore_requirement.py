@@ -12,6 +12,8 @@ from infrastructure.shared.models.vision import VisualModel
 from infrastructure.utils.presentation.console import DemoConsole
 from infrastructure.utils.presentation.logging import console_log
 from infrastructure.utils.files import save_json, save_text
+from infrastructure.shared.agent.tasks import TaskFailures
+from infrastructure.shared.agent.efficiency import enabled
 from infrastructure.stages.requirements.tree import RequirementTree
 from infrastructure.shared.project.git import checkpoint
 
@@ -293,15 +295,27 @@ def explore_requirement(input_dir: Path, arc_dir: Path, pause: bool = False) -> 
     checkpoint(arc_dir.parent, stage="01", task="requirements", action="Publish input requirement snapshot",
         details={"source": str(source), "image_references": references})
     analysis = {}
+    if enabled('service_recovery'):
+        save_json(arc_dir / 'visual_analysis.json', analysis)
     if references:
         model = VisualModel()
-        for reference in references:
-            print(f"Analyzing image: {reference}", flush=True)
-            analysis[reference] = model.analyze(input_dir / reference)
-            save_json(arc_dir / "visual_analysis.json", analysis)
-            checkpoint(arc_dir.parent, stage="01", task=reference, action="Publish visual reference analysis",
-                details={"reference": reference, "analysis": analysis[reference]})
-            console.show(f"3. Visual analysis | {reference}", json.dumps(analysis[reference], ensure_ascii=False, indent=2))
+        if enabled('service_recovery'):
+            failures = TaskFailures(arc_dir, '01_explore_requirement', console)
+            for _, reference in failures.iterate(references):
+                with failures.task(reference):
+                    analysis[reference] = model.analyze(input_dir / reference)
+                    save_json(arc_dir / 'visual_analysis.json', analysis)
+                    checkpoint(arc_dir.parent, stage='01', task=reference, action='Publish visual reference analysis',
+                        details={'reference': reference, 'analysis': analysis[reference]})
+            failures.finish()
+        else:
+            for reference in references:
+                print(f"Analyzing image: {reference}", flush=True)
+                analysis[reference] = model.analyze(input_dir / reference)
+                save_json(arc_dir / "visual_analysis.json", analysis)
+                checkpoint(arc_dir.parent, stage="01", task=reference, action="Publish visual reference analysis",
+                    details={"reference": reference, "analysis": analysis[reference]})
+                console.show(f"3. Visual analysis | {reference}", json.dumps(analysis[reference], ensure_ascii=False, indent=2))
     else:
         console.show("3. Visual analysis", "No referenced images; no model call is needed.")
     save_json(arc_dir / "visual_analysis.json", analysis)

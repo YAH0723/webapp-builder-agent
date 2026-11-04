@@ -72,7 +72,7 @@ def infer_db_obligations(arc_dir: Path, pause: bool = False, top_k: int = 6, max
 
     failures = TaskFailures(arc_dir, "03_infer_db_obligations", console)
     save_json(arc_dir / "db_obligations.json", obligations)
-    for index, rid in enumerate(tree.leaves, 1):
+    for index, rid in failures.iterate(tree.leaves):
         with failures.task(rid):
             requirement = tree.requirements[rid]
             label = f"{index}/{len(tree.leaves)} {rid}"

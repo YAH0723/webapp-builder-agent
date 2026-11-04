@@ -20,6 +20,8 @@ B2 分支使用 `--variant B2`，生成 `releases/webapp-builder-agent-B2.zip`�
 
 共享 API 协调版本使用 `--variant B2.2`，生成 `releases/webapp-builder-agent-B2.2.zip`。B2.1 保持冻结；B2.2 默认使用 B2 profile 并启用 `ARC_B2_API_COORDINATION`，见 [设计恢复说明](api-design-recovery.md)。
 
+上游服务恢复版本使用 `--variant B2.2R1`，生成 `releases/webapp-builder-agent-B2.2R1.zip`。它从 B2.2 派生；B2.2 与 B2.3 包均保持原样，见 [恢复说明](upstream-recovery.md)。
+
 ## 平台运行协议
 
 平台提供需求目录和应用输出目录，调用方式为：

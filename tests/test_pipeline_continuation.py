@@ -27,6 +27,7 @@ class PipelineContinuation(unittest.TestCase):
                 calls.append(rid)
                 return {} if rid == 'BAD' else {'entities': {}, 'related_fields': []}
             with ExitStack() as stack, redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                stack.enter_context(patch.dict('os.environ', {'ARC_AGENT_PROFILE': 'b1'}, clear=True))
                 stack.enter_context(patch.object(import_module('02_build_db_schema'), 'TextModel',
                     return_value=Mock(generate_json=schema_proposal)))
                 stack.enter_context(patch.object(import_module('03_infer_db_obligations'), 'TextModel',

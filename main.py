@@ -52,6 +52,9 @@ def main(argv: list[str] | None = None) -> None:
     if compiler.report["status"] == "COMPLETED_WITH_FAILURES":
         print(f"All passes completed. Report: {compiler.arc_dir / 'compilation.json'}", file=sys.stderr)
         raise SystemExit(0)
+    if compiler.report['status'] == 'BLOCKED':
+        print(f"Generation blocked by incomplete prerequisites. Report: {compiler.arc_dir / 'compilation.json'}", file=sys.stderr)
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":

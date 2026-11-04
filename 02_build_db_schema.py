@@ -100,7 +100,7 @@ def build_db_schema(arc_dir: Path, pause: bool = False, top_k: int = 6, max_atte
     schema = {"entities": {}, "requirements": {}}
     failures = TaskFailures(arc_dir, "02_build_db_schema", console)
     save_json(arc_dir / "db_schema.json", schema)
-    for index, requirement in enumerate(nodes, 1):
+    for index, requirement in failures.iterate(nodes, identity=lambda node: node['id']):
         with failures.task(requirement["id"]):
             label = f"{index}/{len(nodes)} {requirement['id']}"
             console.show(f"{label} | 1. Current requirement", (
