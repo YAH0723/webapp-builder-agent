@@ -24,6 +24,7 @@ from infrastructure.shared.project.dependencies import install_dependencies
 from infrastructure.utils.files import save_json
 from infrastructure.stages.frontend.ui.design import page_context, page_elements
 from infrastructure.shared.project.git import checkpoint
+from infrastructure.shared.agent.efficiency import enabled
 
 
 def scenario_context(ui, design, rid):
@@ -274,6 +275,10 @@ def run_trigger_tdd(arc_dir, tree, schema, backend, ui, design, images, contexts
             report["baseline"]["repair_turns"] = repair["turns"]
         report["baseline"].update(status="GREEN", checks=baseline)
     save_json(arc_dir / "frontend_e2e.json", report)
+    if enabled('flow_batches'):
+        from infrastructure.stages.frontend.triggers.batching import run_flow_batches
+        return run_flow_batches(arc_dir, tree, schema, backend, ui, design, contexts, model, console,
+            report, checks, ui_checks, max_turns, max_tests)
     for number, rid in enumerate(tree.leaves, 1):
         tids = set(design["requirements"][rid])
         steps = tree.own_steps[rid]

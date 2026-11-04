@@ -4,6 +4,7 @@ import json
 
 from infrastructure.shared.agent.discovery import DISCOVERY_RULES, DiscoverySession
 from infrastructure.shared.project.git import checkpoint
+from infrastructure.shared.agent.efficiency import enabled, positive_setting
 
 
 RESPONSE_ERRORS = (ValueError, KeyError, TypeError, AttributeError, IndexError)
@@ -45,6 +46,13 @@ def propose_json(model, instructions, request, accept, console, label, max_attem
         instructions += "\n\n" + DISCOVERY_RULES
         request["context_kinds"] = list(context_index.records())
     discovery = DiscoverySession(context_index) if context_index is not None else None
+    model_calls = 0
+    def generate(prompt):
+        nonlocal model_calls
+        if enabled('bounded_repair') and model_calls >= positive_setting('MAX_DESIGN_CALLS', 32):
+            raise RuntimeError(f'{label}: B3 logical model-call limit reached after {model_calls} calls')
+        model_calls += 1
+        return model.generate_json(prompt, request)
     for attempt in range(1, max_attempts + 1):
         progress = f"{attempt}/{max_attempts}"
         console.show(f"{label} | Model proposal {progress}", "Generate the proposal; response-reading and obligation errors receive repair feedback.")
@@ -56,14 +64,14 @@ def propose_json(model, instructions, request, accept, console, label, max_attem
                 prompt += "\nActual failure: " + correction["error"]
                 if correction.get("details"):
                     prompt += "\nRepair details:\n" + json.dumps(correction["details"], ensure_ascii=False, indent=2)
-            response = model.generate_json(prompt, request)
+            response = generate(prompt)
             while context_index is not None and isinstance(response, dict) and "context_request" in response:
                 query = response["context_request"]
                 console.show(label + " | Context query", json.dumps(query, ensure_ascii=False))
                 request["context_result"] = discovery.resolve(query)
                 request["context_records"] = discovery.evidence
                 request["context_candidates"] = discovery.candidates
-                response = model.generate_json(prompt, request)
+                response = generate(prompt)
             accepted = accept(response)
             checkpoint(task=label, action=f"Accept design proposal {attempt}",
                 details={"attempt": attempt, "sections": list(response) if isinstance(response, dict) else []})

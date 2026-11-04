@@ -45,6 +45,36 @@ def git(*arguments: str) -> bytes:
     return subprocess.check_output(["git", *arguments], cwd=ROOT)
 
 
+README_B3 = """# WebApp Builder Agent: B3 flow batching
+
+Based on B0 compiler e529ae516a2f231e41439b750dfb5b88f7e20657.
+Source: https://github.com/YAH0723/webapp-builder-agent
+Entry: python3 main.py REQUIREMENTS_DIRECTORY --output-dir APPLICATION_DIRECTORY
+Install pip requirements.txt; runtime needs Node.js 22.12+, npm, Git and Bash.
+
+Stage 12 separately authors scenario suites, then jointly implements adjacent
+requirements sharing pages/APIs. Groups preserve order and split at four requirements
+or 60000 task-context characters. Tests are read-only during group implementation.
+Failed groups restore their baseline; original B0 independent final acceptance follows.
+The earlier B0 stages and validators remain, including model-authored stage 11 design.
+
+Other changes: exact context deduplication, permission-consistent tool examples,
+shared API owner evidence, deterministic failed-check localization, bounded logical
+model calls (32/task, 32/design, 48/group) and four-repeat acceptance-failure stop.
+SDK retries are outside logical counters. No semantic summary or context-reference DSL.
+ARC_AGENT_PROFILE=b3 is default; b0 disables features but is not the frozen B0 ZIP.
+Boolean switches: ARC_B3_FLOW_BATCHES, ARC_B3_SHARED_CONTRACTS, ARC_B3_CONTEXT_REUSE,
+ARC_B3_SCOPED_TOOLS, ARC_B3_FAILURE_EVIDENCE, ARC_B3_BOUNDED_REPAIR.
+Task/context/group metadata: .arc/b3_metrics.jsonl and .arc/b3_flow_plan.json.
+
+Model, reasoning and output defaults remain B0's (deepseek-flash).
+Platform supplies OPENAI_BASE_URL and OPENAI_API_KEY; no .env/key is bundled.
+This is a general agent, not a generated site or benchmark-specific answer.
+Offline checks do not establish official quality, cost, speed or composite-score gains.
+Inspect compilation.json and actual evaluator results, not just process exit status.
+"""
+
+
 def compiler_path(name: str) -> bool:
     path = PurePosixPath(name)
     if path.parts[0] == "infrastructure":
@@ -54,7 +84,9 @@ def compiler_path(name: str) -> bool:
     )
 
 
-def build(output: Path) -> dict:
+def build(output: Path, variant: str = 'B0') -> dict:
+    if variant not in {'B0', 'B3'}:
+        raise ValueError('This branch packages frozen B0 or the B3 candidate only')
     names = sorted(name.decode("utf-8") for name in git("ls-files", "-z").split(b"\0")
         if name and compiler_path(name.decode("utf-8")))
     payload = {}
@@ -72,20 +104,28 @@ def build(output: Path) -> dict:
         payload[name] = data
     required = {"main.py", "requirements.txt", "infrastructure/compiler.py",
         "infrastructure/shared/project/templates/deploy.sh"}
+    if variant == 'B3':
+        required.update({'infrastructure/shared/agent/efficiency.py',
+            'infrastructure/shared/agent/evidence.py', 'infrastructure/stages/frontend/triggers/batching.py'})
     if not required.issubset(payload):
         raise ValueError(f"Missing runtime files: {required - payload.keys()}")
     unchanged = not git("diff", UPSTREAM, "--", *names).strip()
-    if not unchanged:
+    if variant == 'B0' and not unchanged:
         raise ValueError("B0 requires unchanged reference compiler sources. Review changes before packaging.")
-    payload["README.md"] = README.encode("utf-8")
+    if variant == 'B3' and git('diff', 'HEAD', '--', *names).strip():
+        raise ValueError('Commit the reviewed B3 compiler before packaging')
+    payload["README.md"] = (README if variant == 'B0' else README_B3).encode("utf-8")
     manifest = {
-        "variant": "B0-reference", "source_commit": git("rev-parse", "HEAD").decode().strip(),
+        "variant": "B0-reference" if variant == 'B0' else 'B3-flow-batches', "source_commit": git("rev-parse", "HEAD").decode().strip(),
+        "baseline_compiler_commit": "e529ae516a2f231e41439b750dfb5b88f7e20657",
         "upstream_commit": UPSTREAM, "compiler_unchanged": unchanged,
         "entrypoint": "main.py", "default_model": "deepseek-flash",
         "files": {name: hashlib.sha256(data).hexdigest() for name, data in sorted(payload.items())},
     }
     payload["submission-manifest.json"] = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode()
     output = output.resolve()
+    if output.suffix.lower() != '.zip' or output.exists():
+        raise ValueError('Use a new .zip output path; released archives are never overwritten')
     if output.is_relative_to(ROOT / "infrastructure"):
         raise ValueError("Output must not overwrite compiler sources")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -100,6 +140,7 @@ def build(output: Path) -> dict:
         if archive.testzip() is not None or set(archive.namelist()) != set(payload):
             raise ValueError("Archive verification failed")
     summary = {"archive": str(output), "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+        "variant": manifest['variant'],
         "size_bytes": output.stat().st_size, "file_count": len(payload),
         "source_commit": manifest["source_commit"], "compiler_unchanged": unchanged,
         "default_model": manifest["default_model"]}
@@ -109,5 +150,7 @@ def build(output: Path) -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT / "releases/webapp-builder-agent-B0.zip")
-    print(json.dumps(build(parser.parse_args().output), ensure_ascii=False, indent=2))
+    parser.add_argument('--variant', choices=['B0','B3'], default='B0')
+    parser.add_argument("--output", type=Path)
+    args=parser.parse_args()
+    print(json.dumps(build(args.output or ROOT / f'releases/webapp-builder-agent-{args.variant}.zip', args.variant), ensure_ascii=False, indent=2))

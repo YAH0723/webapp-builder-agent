@@ -10,6 +10,7 @@ from infrastructure.shared.agent.tools.protocol import FILE_TOOL_RULES
 from infrastructure.shared.agent.proposals import RESPONSE_ERRORS, response_feedback
 from infrastructure.shared.project.git import checkpoint
 from infrastructure.utils.files import read_source
+from infrastructure.shared.agent.efficiency import enabled, positive_setting, failure_fingerprint, record_event, scoped_rules
 
 
 class AgentExhausted(ValueError):
@@ -23,7 +24,7 @@ class AgentExhausted(ValueError):
 
 def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
         max_turns: int, console, label: str, feedback=None, feedback_filter=None, context_index=None,
-        allow_discovery=True) -> dict:
+        allow_discovery=True, max_calls=None) -> dict:
     """Refresh files and paths; optionally select failure-related files before repair.
 
     The stage-owned feedback filter may add writable sources/read-only references
@@ -31,18 +32,27 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
     """
     if max_turns < 1:
         raise ValueError("--max-turns must be positive")
+    if max_calls is not None and max_calls < 1:
+        raise ValueError('max_calls must be positive')
     index = context_index if allow_discovery else None
     allow_discovery = index is not None
     discovery, context_result = DiscoverySession(index), None
     read_files = {}
     feedback = [] if feedback is None else [feedback_filter(feedback) if feedback_filter else feedback]
     check_feedback = list(feedback)
+    model_calls, repeats, previous_failure = 0, 0, None
+    call_limit = (max_calls or positive_setting('MAX_TASK_CALLS', 32)) if enabled('bounded_repair') else None
     for turn in range(1, max_turns + 1):
         console.show(f"{label} | Edit round {turn}/{max_turns}",
             "Generate file edits, then run the stage's compilation and test acceptance checks.")
         response, applied, checking = None, False, False
         try:
             def request_model():
+                nonlocal model_calls
+                if call_limit is not None and model_calls >= call_limit:
+                    raise AgentExhausted(label, turn, {'error': 'B3 logical model-call limit reached',
+                        'model_calls': model_calls, 'last_checks': check_feedback})
+                model_calls += 1
                 # Gates may regenerate wiring outside edit_file; discard stale excerpts too.
                 for path, excerpts in list(read_files.items()):
                     target = files.path(path)
@@ -57,6 +67,9 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
                             break
                 request = {"task": files.task_state(task), "files": files.state(), "feedback": feedback,
                     "context_kinds": list(index.records()) if index is not None else [], "tools": files.schemas()}
+                if enabled('scoped_tools') and files.readable is not None:
+                    request['file_access'] = {'readable_paths': sorted(files.readable),
+                        'notice': 'Read only these paths; protected sources are unavailable.'}
                 if read_files:
                     request["read_files"] = read_files
                 if discovery.evidence:
@@ -68,7 +81,7 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
                     request["task"]["shared_conventions"] = conventions
                 if context_result is not None:
                     request["context_result"] = context_result
-                rules = instructions + "\n\n" + FILE_TOOL_RULES
+                rules = instructions + "\n\n" + (scoped_rules(files) if enabled('scoped_tools') else FILE_TOOL_RULES)
                 if allow_discovery:
                     rules += "\n\n" + DISCOVERY_RULES
                 else:
@@ -82,9 +95,8 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
                     query = response["context_request"]
                     console.show(label + " | Context query", json.dumps(query, ensure_ascii=False))
                     if isinstance(query, dict) and query.get("kind") == "file" and "ids" in query:
-                        raise ValueError('Use read_file for file content, for example '
-                            '{"tool_calls":[{"tool":"read_file","path":"backend/src/db/initialize.ts"}]}. '
-                            'context_request discovers semantic records or file candidates.')
+                        raise ValueError('Use read_file for file content with a permitted path from input.files '
+                            'or file_access. context_request discovers semantic records or file candidates.')
                     else:
                         context_result = discovery.resolve(query)
                 elif "tool_calls" in response and files.effect(response["tool_calls"]) == "read":
@@ -133,7 +145,11 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
             checks = gate()
             checkpoint(files.output, task=label, action=f"Accept edit round {turn}",
                 details={"round": turn, "checks": checks})
+            if enabled('bounded_repair'):
+                record_event(files.output, 'task', label=label, status='GREEN', model_calls=model_calls, turns=turn)
             return {"turns": turn, "checks": checks}
+        except AgentExhausted:
+            raise
         except (*RESPONSE_ERRORS, RuntimeError, OSError) as error:
             message = str(error)
             console.show(f"{label} | Repair feedback", message)
@@ -149,4 +165,13 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
                 feedback = [*check_feedback, rejected]
             checkpoint(files.output, task=label, action=f"Reject edit round {turn}", status="REJECTED",
                 details={"round": turn, "applied": applied, "feedback": feedback})
+            if checking and enabled('bounded_repair'):
+                fingerprint = failure_fingerprint(rejected)
+                repeats = repeats + 1 if fingerprint == previous_failure else 1
+                previous_failure = fingerprint
+                if repeats >= positive_setting('MAX_SAME_FAILURES', 4):
+                    record_event(files.output, 'task', label=label, status='STALLED',
+                        model_calls=model_calls, fingerprint=fingerprint, repeats=repeats)
+                    raise AgentExhausted(label, turn, {'error': 'Repeated unchanged acceptance failure',
+                        'model_calls': model_calls, 'last_checks': check_feedback}) from error
     raise AgentExhausted(label, max_turns, feedback)

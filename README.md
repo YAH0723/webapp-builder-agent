@@ -49,11 +49,12 @@ npm start
 | `infrastructure/stages/` | 需求、数据库、后端、前端处理 |
 | `infrastructure/shared/` | 模型、检索、编辑循环、项目模板 |
 | `tests/` | 编译器及工具测试 |
-| `team-tools/package-baseline.py` | B0 干净打包工具 |
+| `team-tools/package-baseline.py` | B0 / B3 干净打包工具 |
 
 ## 提交与协作
 
 - [ARC-Bench 打包与提交](docs/submission.md)
 - [贡献指南](CONTRIBUTING.md)
+- [B3 成组流程实现与成本控制](docs/b3-flow-batches.md)
 
-参考实现固定版本：`d3da23e9897db84cfd37ce04a4ab5b38424ef399`。当前 B0 编译运行代码保持该版本，优化结果以实际评测为准。
+参考实现固定版本：`d3da23e9897db84cfd37ce04a4ab5b38424ef399`。本分支为基于 B0 编译器的 B3 候选：保留独立最终验收，成组实现相关前后端流程，并加入精确去重、权限一致的工具提示及有限修复。实际综合分与费用收益需平台评测验证。

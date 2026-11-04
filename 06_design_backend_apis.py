@@ -20,6 +20,7 @@ from infrastructure.shared.agent.proposals import propose_json
 from infrastructure.shared.agent.tasks import TaskFailures
 from infrastructure.shared.agent.discovery import ContextIndex
 from infrastructure.shared.agent.conventions import CONVENTION_RULES, load_conventions, select_conventions, merge_conventions
+from infrastructure.shared.agent.efficiency import enabled
 
 
 INSTRUCTIONS = """Design complete backend APIs for the supplied leaf requirement and scenarios.
@@ -177,6 +178,14 @@ def design_backend_apis(arc_dir: Path, pause: bool = False, top_k: int = 6, max_
                 "shared_conventions": select_conventions(conventions, fields=related, requirements=[rid]),
                 "retrieved_apis": retrieved["apis"], "api_inventory": list(retrieved["apis"]),
             }
+            if enabled('shared_contracts'):
+                owners = {aid: [owner for owner, ids in design['requirements'].items() if aid in ids]
+                    for aid in retrieved['apis']}
+                request['shared_api_owners'] = owners
+                request['owner_requirements'] = {owner: requirement_context(tree, owner)
+                    for ids in owners.values() for owner in ids}
+                request['owner_obligations'] = {owner: obligations['requirements'][owner]
+                    for ids in owners.values() for owner in ids}
             def accept(response):
                 nonlocal conventions
                 updated = apply_decomposition(design, response, rid, obligations, tree=tree)

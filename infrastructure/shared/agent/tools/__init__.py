@@ -9,6 +9,7 @@ from infrastructure.utils.files import read_source, save_bytes, save_text
 
 from .files import FileToolError, edit_file, read_file, workspace_path
 from .schemas import TOOL_REGISTRY
+from infrastructure.shared.agent.efficiency import enabled
 
 
 class FileTools:
@@ -59,7 +60,19 @@ class FileTools:
         return task
 
     def schemas(self):
-        return deepcopy([item[1] for item in TOOL_REGISTRY.values()])
+        schemas = deepcopy([item[1] for item in TOOL_REGISTRY.values()])
+        if enabled('scoped_tools'):
+            readable = sorted(self.readable if self.readable is not None else self.files)
+            path = next((p for p in readable if self.path(p).is_file()), None)
+            for schema in schemas:
+                if schema['tool'] == 'read_file' and path:
+                    schema['example']['path'] = path
+                else:
+                    schema.pop('example', None)
+        return schemas
+
+    def example(self, name):
+        return next((s.get('example', {}) for s in self.schemas() if s['tool'] == name), {})
 
     def effect(self, calls):
         """Registered effects determine whether to continue reading or run acceptance."""
@@ -69,7 +82,7 @@ class FileTools:
         for number, call in enumerate(calls, 1):
             if not isinstance(call, dict) or not isinstance(call.get("tool"), str):
                 raise FileToolError("INVALID_CALL", "Each tool_calls item must be an object with a tool name",
-                    call_index=number, examples=[item[1]["example"] for item in TOOL_REGISTRY.values()])
+                    call_index=number, examples=[s['example'] for s in self.schemas() if 'example' in s])
             name = call["tool"]
             if name not in TOOL_REGISTRY:
                 raise FileToolError("UNKNOWN_TOOL", f"Unknown tool {name!r}; use read_file or edit_file",
@@ -95,7 +108,7 @@ class FileTools:
                 raise FileToolError("INVALID_CALL", f"Invalid {name} call at tool_calls item {number}. "
                     "Put path and other parameters beside tool, without an arguments wrapper.",
                     call_index=number, tool=name, missing_fields=missing, unexpected_fields=unexpected,
-                    invalid_fields=invalid, example=schema["example"])
+                    invalid_fields=invalid, example=self.example(name))
             effects.add(TOOL_REGISTRY[name][2])
         if len(effects) > 1:
             raise FileToolError("MIXED_TOOL_BATCH", "Separate read calls from edit calls; inspect reads before editing")
@@ -116,11 +129,11 @@ class FileTools:
                 try:
                     result = function(self, **parameters)
                 except FileToolError as error:
-                    error.feedback.update(call_index=number, tool=name, example=schema["example"])
+                    error.feedback.update(call_index=number, tool=name, example=self.example(name))
                     raise
                 except (ValueError, TypeError, OSError) as error:
                     raise FileToolError("FILE_TOOL_FAILED", str(error), call.get("path"),
-                        call_index=number, tool=name, example=schema["example"]) from error
+                        call_index=number, tool=name, example=self.example(name)) from error
                 results.append({"tool": name, "result": result})
             for path, content in self._pending.items():
                 target = self.path(path)

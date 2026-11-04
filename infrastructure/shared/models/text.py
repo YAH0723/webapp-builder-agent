@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI, OpenAIError
 from infrastructure.utils.presentation.model_io import http_client, invoke
+from infrastructure.shared.agent.efficiency import enabled, compact_context, CONTEXT_RULES, record_event
 
 
 DEFAULT_MODEL = "deepseek-flash"
@@ -96,6 +97,15 @@ class TextModel:
 
     def generate_json(self, instructions: str, payload: dict) -> dict:
         """Request JSON using the stage prompt and serialized task data."""
+        if enabled('context_reuse'):
+            before = len(json.dumps(payload, ensure_ascii=False))
+            payload = compact_context(payload)
+            instructions += '\n' + CONTEXT_RULES
+            from infrastructure.utils.presentation.logging import session_info
+            session = session_info()
+            if session:
+                record_event(session['output'], 'context', stage=session['stage'], before_chars=before,
+                    after_chars=len(json.dumps(payload, ensure_ascii=False)))
         mode = getattr(self, "reasoning", "low")
         try:
             response = self._request(
