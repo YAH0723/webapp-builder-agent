@@ -138,6 +138,13 @@ class CompilerPipeline(unittest.TestCase):
 
 
 class CompilerCLI(unittest.TestCase):
+    def setUp(self):
+        # This class verifies preserved legacy CLI behavior. B6's default is tested separately.
+        import os
+        context = patch.dict(os.environ, {'ARC_PIPELINE': 'classic'})
+        context.start()
+        self.addCleanup(context.stop)
+
     def source(self, root):
         source = root / 'input'
         source.mkdir()

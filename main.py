@@ -1,6 +1,7 @@
 """Compile a requirement directory into an executable application."""
 
 import argparse
+import os
 from pathlib import Path
 import sys
 
@@ -20,6 +21,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Show detailed model I/O and save per-call prompt/response logs; usage and timing are always shown")
     parser.add_argument("--port", type=int, default=3000,
         help="Default generated backend port and frontend API proxy target (default: 3000)")
+    parser.add_argument('--pipeline', choices=('compact', 'classic'), default=os.getenv('ARC_PIPELINE', 'compact'),
+        help='B6 compact whole-application route (default), or the preserved 13-pass classic route')
     args = parser.parse_args(argv)
     try:
         if not 1 <= args.port <= 65535:
@@ -40,7 +43,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> None:
     configure_console()
     args = parse_args(argv)
-    compiler = Compiler(args.requirement_path, args.output_dir, model_log=args.model_log, port=args.port)
+    if args.pipeline == 'compact':
+        from infrastructure.compact.compiler import CompactCompiler
+        compiler = CompactCompiler(args.requirement_path, args.output_dir, model_log=args.model_log, port=args.port)
+    else:
+        compiler = Compiler(args.requirement_path, args.output_dir, model_log=args.model_log, port=args.port)
     try:
         compiler.compile()
     except KeyboardInterrupt:
@@ -48,10 +55,13 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(130)
     except Exception as error:
         print(f"Compilation failed at {compiler.current_stage or 'startup'}: {error}", file=sys.stderr)
-        raise SystemExit(0)
+        raise SystemExit(1 if args.pipeline == 'compact' else 0)
     if compiler.report["status"] == "COMPLETED_WITH_FAILURES":
-        print(f"All passes completed. Report: {compiler.arc_dir / 'compilation.json'}", file=sys.stderr)
-        raise SystemExit(0)
+        print(f"Compilation has failures. Report: {compiler.arc_dir / 'compilation.json'}", file=sys.stderr)
+        if args.pipeline == 'compact' and compiler.report.get('evaluation_ready') is True:
+            print('Built application passed startup checks; official evaluation may score this partial result.', file=sys.stderr)
+            raise SystemExit(0)
+        raise SystemExit(1 if args.pipeline == 'compact' else 0)
     if compiler.report['status'] == 'BLOCKED_ENVIRONMENT':
         print(f"Environment blocked; later model work was skipped. Report: {compiler.arc_dir / 'compilation.json'}", file=sys.stderr)
         raise SystemExit(1)
