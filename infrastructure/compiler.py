@@ -8,6 +8,7 @@ from infrastructure.utils.presentation.console import show_panel
 from infrastructure.utils.presentation.logging import console_log
 from infrastructure.utils.files import save_json
 from infrastructure.shared.project.git import checkpoint
+from infrastructure.shared.project.environment import EnvironmentBlocked
 
 
 class Compiler:
@@ -24,14 +25,26 @@ class Compiler:
         self.artifacts: dict[str, object] = {}
         self.current_stage: str | None = None
         self.report = {"status": "NOT_STARTED", "stages": {}}
+        self.environment_failure = None
 
     def _run(self, module: str, function: str, *arguments, **options):
         """Attempt every pass; keep failures explicit without aborting later passes."""
         self.current_stage = module + ".py"
+        if self.environment_failure:
+            result = {'status': 'BLOCKED_ENVIRONMENT', 'error': self.environment_failure}
+            self.report['stages'][module] = result
+            save_json(self.arc_dir / 'compilation.json', self.report)
+            return result
         try:
             with console_log(self.output_dir, stage=self.current_stage,
                     model_log=self.model_log, debug_model_io=self.model_log):
                 result = getattr(import_module(module), function)(*arguments, **options)
+                if module == '00_project_initialization':
+                    from infrastructure.shared.project.environment import require_environment
+                    require_environment(self.output_dir, recover=True)
+        except EnvironmentBlocked as error:
+            self.environment_failure = str(error)
+            result = {'status': 'BLOCKED_ENVIRONMENT', 'error': str(error)}
         except KeyboardInterrupt as error:
             self.report["status"] = "INTERRUPTED"
             self.report["stages"][module] = {"status": "INTERRUPTED", "error": str(error)}
@@ -61,6 +74,7 @@ class Compiler:
         """Execute the 13 compilation passes in order and return the generated application directory."""
         self.artifacts.clear()
         self.report = {"status": "RUNNING", "stages": {}}
+        self.environment_failure = None
         show_panel("Requirement compiler | Pipeline",
             f"Input: {self.input_dir}\nOutput: {self.output_dir}\nPasses: 13\nDetailed model logs: {'enabled' if self.model_log else 'disabled'}")
         self.artifacts["project_files"] = self._run(
@@ -91,8 +105,9 @@ class Compiler:
             "12_implement_frontend_tdd", "implement_frontend_triggers", self.input_dir, self.arc_dir)
         self.current_stage = None
         incomplete = [stage for stage, result in self.report["stages"].items()
-            if result["status"] in {"FAILED", "COMPLETED_WITH_FAILURES"}]
-        self.report["status"] = "COMPLETED_WITH_FAILURES" if incomplete else "GREEN"
+            if result["status"] in {"FAILED", "COMPLETED_WITH_FAILURES", "BLOCKED_ENVIRONMENT"}]
+        self.report["status"] = ('BLOCKED_ENVIRONMENT' if self.environment_failure else
+                                 'COMPLETED_WITH_FAILURES' if incomplete else 'GREEN')
         save_json(self.arc_dir / "compilation.json", self.report)
         checkpoint(self.output_dir, stage="compiler", task="pipeline", action="Publish final compilation report",
             status=self.report["status"], details={"stages": self.report["stages"], "incomplete_stages": incomplete})

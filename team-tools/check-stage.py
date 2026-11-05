@@ -9,6 +9,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from infrastructure.shared.project.entrypoints import selected_path
 from infrastructure.shared.agent.replay import workload_digest
+from infrastructure.shared.project.environment import EnvironmentBlocked
 from infrastructure.stages.backend.context import load_context
 from infrastructure.stages.backend.testing import BackendChecks, require_green as backend_green
 from infrastructure.stages.frontend.ui.testing import FrontendChecks, test_path as ui_path, require_green
@@ -96,12 +97,12 @@ def check(output, stage, ids=(), selected_checks=('typecheck', 'tests', 'build')
                         else:
                             require_green(result)
                     entry = {'status': 'GREEN', 'result': result}
-                except (ValueError, RuntimeError, OSError) as error:
+                except (ValueError, RuntimeError, OSError, EnvironmentBlocked) as error:
                     entry = {'status': 'FAILED', 'error': str(error), 'result': result}
                 entry['seconds'] = round(time.monotonic() - began, 3)
                 report['checks'][name] = entry
         report['status'] = 'FAILED' if any(c['status'] == 'FAILED' for c in report['checks'].values()) else 'GREEN'
-    except (ValueError, RuntimeError, OSError, KeyError) as error:
+    except (ValueError, RuntimeError, OSError, KeyError, EnvironmentBlocked) as error:
         report.update(status='FAILED', error=str(error))
     finally:
         report['seconds'] = round(time.monotonic() - start, 3)

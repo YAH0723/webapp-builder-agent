@@ -1,14 +1,14 @@
 # ARC-Bench 打包与提交
 
-## B4.2 提交包
+## B4.3 提交包
 
 在仓库根目录运行：
 
 ```sh
-uv run python team-tools/package-baseline.py --variant B4.2
+uv run python team-tools/package-baseline.py --variant B4.3
 ```
 
-默认输出 `releases/webapp-builder-agent-B4.2.zip` 和同名 JSON 摘要。可用 `--output` 指定新位置；已有发布包不会覆盖。先提交编译器改动，确保包内清单对应明确的 Git 提交。
+默认输出 `releases/webapp-builder-agent-B4.3.zip` 和同名 JSON 摘要。可用 `--output` 指定新位置；已有发布包不会覆盖。先提交编译器改动，确保包内清单对应明确的 Git 提交。
 
 打包工具只收集 Git 管理的编译运行文件，并检查工作区与提交一致。ZIP 根目录包含 `main.py`、`requirements.txt`、阶段脚本、`infrastructure/`、README 和文件哈希清单，不包含本地环境文件、密钥、任务数据或日志。
 

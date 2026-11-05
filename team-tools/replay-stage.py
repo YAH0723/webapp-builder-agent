@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from infrastructure.shared.agent.replay import ReplayTape, workload_digest
+from infrastructure.shared.project.environment import EnvironmentBlocked
 
 STAGES = {
     '08': ('08_implement_backend_tdd', 'implement_backend_tdd'),
@@ -60,7 +61,7 @@ def replay(workspace, requirements, stage, responses, max_turns=3):
         report['stage_status'] = result.get('status', 'DESIGNED')
         report['stage_summary'] = result.get('summary')
         report['status'] = 'FAILED' if result.get('status') in {'FAILED', 'COMPLETED_WITH_FAILURES'} else 'GREEN'
-    except (ValueError, RuntimeError, OSError, AssertionError) as error:
+    except (ValueError, RuntimeError, OSError, AssertionError, EnvironmentBlocked) as error:
         report.update(status='FAILED', error=str(error), calls=tape.calls,
                       scripted_model_calls=len(tape.calls))
     report['seconds'] = round(time.monotonic() - start, 3)

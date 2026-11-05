@@ -179,10 +179,15 @@ class FrontendChecks:
         result = self.execute(["node_modules/@playwright/test/cli.js", "install", "chromium"], timeout=600)
         print(result["output"], flush=True)
         if result["returncode"]:
+            from infrastructure.shared.project.environment import active, block
+            if active():
+                block(self.output, 'Playwright browser installation failed', evidence=result)
             raise ValueError("Playwright Chromium installation failed; install its OS libraries if reported above")
 
     def typecheck(self, files: list[str], *, test_roots=("frontend/tests/ui",), source_files=("src/**/*.ts", "src/**/*.tsx")) -> dict:
         """Compile selected frontend/test roots with a temporary TypeScript configuration, then remove that configuration."""
+        from infrastructure.shared.project.environment import require_environment
+        require_environment(self.output)
         includes = list(source_files)
         for relative in files:
             path = (self.output / relative).resolve()

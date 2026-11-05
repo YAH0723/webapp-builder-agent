@@ -33,6 +33,8 @@ class E2EChecks(FrontendChecks):
 
     def tests(self, files):
         """Run selected E2E specs and keep startup/runner failures available for repair."""
+        from infrastructure.shared.project.environment import require_environment
+        require_environment(self.output)
         if not files:
             raise ValueError("Do not run empty E2E suites")
         for relative in files:

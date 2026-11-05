@@ -52,6 +52,9 @@ def main(argv: list[str] | None = None) -> None:
     if compiler.report["status"] == "COMPLETED_WITH_FAILURES":
         print(f"All passes completed. Report: {compiler.arc_dir / 'compilation.json'}", file=sys.stderr)
         raise SystemExit(0)
+    if compiler.report['status'] == 'BLOCKED_ENVIRONMENT':
+        print(f"Environment blocked; later model work was skipped. Report: {compiler.arc_dir / 'compilation.json'}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

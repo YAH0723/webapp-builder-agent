@@ -1,6 +1,7 @@
 """Isolate failed design tasks while preserving successful neighboring artifacts."""
 
 from contextlib import contextmanager
+from infrastructure.shared.project.environment import EnvironmentBlocked
 
 
 class StageIncomplete(RuntimeError):
@@ -21,6 +22,8 @@ class TaskFailures:
     def task(self, identity):
         try:
             yield
+        except EnvironmentBlocked:
+            raise
         except Exception as error:
             if isinstance(error, OSError):
                 raise

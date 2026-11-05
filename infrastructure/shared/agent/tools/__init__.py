@@ -40,6 +40,9 @@ class FileTools:
         return self.target is not None and (self.target.path is None or not self.path(self.target.path).is_file())
 
     def can_write(self, path):
+        from infrastructure.shared.project.environment import protected
+        if protected(path):
+            return False
         return path in self.writable or bool(self.allow_write and self.allow_write(path))
 
     def state(self):

@@ -165,6 +165,8 @@ starts/restarts the compiled backend and initializes backend/data/app.db after e
 
 def verify_database_runtime(arc_dir, schema, model, console, max_turns=10):
     output = arc_dir.parent.resolve()
+    from infrastructure.shared.project.environment import require_environment
+    require_environment(output, recover=True)
     report = {"status": "CHECKING", "expected_tables": list(schema["entities"]), "repair_turns": 0}
     path = arc_dir / "db_checks.json"
     save_json(path, report)
