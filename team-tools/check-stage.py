@@ -46,6 +46,9 @@ def select_files(output, stage, ids):
     if not chosen:
         raise ValueError('No targets for this stage; nothing was verified')
     paths = {identity: path_for(identity) for identity in chosen}
+    if stage == '12' and not ids and report.get('journey'):
+        from infrastructure.stages.frontend.triggers.coverage import JOURNEY_PATH
+        paths['@user-journey'] = JOURNEY_PATH
     missing = [identity for identity, path in paths.items() if not path or not (output / path).is_file()]
     if missing:
         raise ValueError('Missing indexed/expected suites: ' + ', '.join(missing))
@@ -94,6 +97,14 @@ def check(output, stage, ids=(), selected_checks=('typecheck', 'tests', 'build')
                             backend_green(result)
                         elif stage == '12':
                             require_suites(result, list(paths.values()), output)
+                            saved = read_artifact(output / '.arc', 'frontend_e2e.json')
+                            if saved.get('mode') == 'b5_scenario_acceptance':
+                                from infrastructure.stages.frontend.triggers.coverage import require_coverage
+                                from infrastructure.stages.requirements.tree import RequirementTree
+                                tree = RequirementTree(read_artifact(output / '.arc', 'requirements.json'))
+                                require_coverage(result, tree, [rid for rid in paths if rid != '@user-journey'], executed=True)
+                                if '@user-journey' in paths:
+                                    require_coverage(result, tree, saved['journey']['requirements'], executed=True, journey=True)
                         else:
                             require_green(result)
                     entry = {'status': 'GREEN', 'result': result}

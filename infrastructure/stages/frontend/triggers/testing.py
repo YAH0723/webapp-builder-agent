@@ -31,6 +31,19 @@ class E2EChecks(FrontendChecks):
         return super().typecheck(files, test_roots=("frontend/tests/ui", "frontend/tests/e2e"),
             source_files=("src/**/*.ts", "src/**/*.tsx") if full_source else ())
 
+    def inventory(self, files):
+        """Collect static test annotations without launching the app or executing tests."""
+        from infrastructure.stages.frontend.triggers.e2e_runtime import CONFIG
+        with TemporaryDirectory(prefix='arc-test-inventory-') as temporary:
+            env = {**os.environ, 'ARC_E2E_FRONTEND_PORT': '31997', 'ARC_E2E_BACKEND_PORT': '31998',
+                   'ARC_E2E_DB_FILE': temporary + '/inventory.db'}
+            for path in files:
+                if not (self.output / path).resolve().is_relative_to(self.output / 'frontend/tests/e2e'):
+                    raise ValueError('Inventory only the selected E2E files')
+            result = self.execute(['node_modules/@playwright/test/cli.js', 'test', '--config', CONFIG,
+                                   '--list', '--reporter=json', *files], env=env)
+        return parse_playwright_result(result, include_files=True)
+
     def tests(self, files):
         """Run selected E2E specs and keep startup/runner failures available for repair."""
         from infrastructure.shared.project.environment import require_environment

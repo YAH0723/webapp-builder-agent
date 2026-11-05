@@ -1,5 +1,5 @@
 """One independent acceptance suite family, batched authoring and application repair."""
-from infrastructure.shared.agent.batching import chunks, setting, protect, feedback_for, log_plan, split_failed
+from infrastructure.shared.agent.batching import chunks, setting, protect, feedback_for, log_plan, split_failed, enabled
 from infrastructure.shared.agent.context import SourceFiles
 from infrastructure.shared.agent.discovery import project_index
 from infrastructure.shared.agent.tools import FileTools
@@ -20,6 +20,8 @@ from infrastructure.stages.frontend.triggers.testing import E2EChecks
 from infrastructure.stages.frontend.ui.runtime import prepare_frontend, APPLICATION_ENTRYPOINTS
 from infrastructure.stages.frontend.ui.testing import FrontendChecks, require_green, test_path as ui_path
 from infrastructure.utils.files import save_json
+from infrastructure.stages.frontend.triggers.coverage import (RULES, JOURNEY_RULES, JOURNEY_PATH,
+    coverage_steps, require_coverage, journey_records, shared_failure_context)
 
 
 AUTHOR_RULES = '''BATCH CONTRACT overrides the single-requirement task shape:
@@ -69,7 +71,7 @@ def run_acceptance_batches(input_dir, arc_dir, schema, backend, ui, design, mode
     records = [{'id': rid, 'requirement': requirement_context(tree, rid)} for rid in tree.leaves]
     groups = chunks(records, setting('ACCEPTANCE_BATCH_SIZE', 4), setting('BATCH_CONTEXT_CHARS', 80000))
     log_plan(output, '12', groups, len(records))
-    report = {'status': 'RUNNING', 'mode': 'b4_single_independent_acceptance',
+    report = {'status': 'RUNNING', 'mode': 'b5_scenario_acceptance',
               'requirements': {}, 'groups': []}
     accepted = []
     ui_files = [ui_path(pid) for pid in ui['pages'] if (output / ui_path(pid)).is_file()]
@@ -78,18 +80,28 @@ def run_acceptance_batches(input_dir, arc_dir, schema, backend, ui, design, mode
         kinds=('schema', 'api', 'page', 'ui_element', 'requirement', 'test_requirement', 'convention', 'file'),
         file_roots=('frontend/src', 'backend/src'))
     queue = [(group, 0) for group in groups]
+    journey = journey_records([r for r in records if r['requirement']['steps']], backend, ui)
+    if journey:
+        queue.append((journey, 1))
     for number, (group, depth) in enumerate(queue, 1):
         rids = [record['id'] for record in group]
+        is_journey = bool(group[0].get('_journey'))
         entry = {'status': 'GENERATING_TESTS', 'requirements': rids, 'split_depth': depth}
         report['groups'].append(entry)
-        for rid in rids:
-            report['requirements'][rid] = {'status': 'GENERATING_TESTS', 'test_path': acceptance_path(rid)}
+        if is_journey:
+            report['journey'] = entry
+        else:
+            for rid in rids:
+                report['requirements'][rid] = {'status': 'GENERATING_TESTS', 'test_path': acceptance_path(rid)}
         save_json(arc_dir / 'independent_acceptance.json', report)
         # Independent generation is separately committed. A failed app repair must not
         # roll back or overwrite its independent oracle.
         try:
             task, apis = acceptance_task(tree, schema, backend, ui, design, rids)
-            paths = [acceptance_path(rid) for rid in rids]
+            task['coverage_steps'] = coverage_steps(tree, rids)
+            paths = [JOURNEY_PATH] if is_journey else [acceptance_path(rid) for rid in rids]
+            if is_journey:
+                task['journey'] = {'test_path': JOURNEY_PATH, 'requirement_ids': rids}
             author = FileTools(output, paths, references=[FIXTURE, 'backend/tests/support/context.ts'],
                 readable=[*paths, FIXTURE, 'backend/tests/support/context.ts'])
 
@@ -101,16 +113,27 @@ def run_acceptance_batches(input_dir, arc_dir, schema, backend, ui, design, mode
                 result = checks.typecheck(paths, full_source=False)
                 if result['returncode']:
                     raise ValueError(result['output'])
+                if enabled('scenario_coverage') or is_journey:
+                    inventory = checks.inventory(paths)
+                    if inventory['returncode']:
+                        raise ValueError(inventory['output'])
+                    require_coverage(inventory, tree, rids, executed=False, journey=is_journey)
                 return result
 
-            if not all((output / path).is_file() for path in paths):
-                agent = run_file_agent(model, INSTRUCTIONS + '\n' + AUTHOR_RULES, task, author,
-                    compile_tests, max_turns, console, f'Acceptance batch {number} / independent author',
-                    allow_discovery=False, max_calls=setting('BATCH_CALLS', 48))
-                entry['generation_turns'] = agent['turns']
-            else:
+            initial = None
+            try:
                 compile_tests()
-            regression = [acceptance_path(rid) for rid in [*accepted, *rids]]
+            except (ValueError, RuntimeError) as error:
+                initial = {'error': str(error)}
+            if initial is not None:
+                rules = INSTRUCTIONS + '\n' + AUTHOR_RULES + ('\n' + RULES if enabled('scenario_coverage') else '')
+                if is_journey:
+                    rules += '\n' + RULES + '\n' + JOURNEY_RULES
+                agent = run_file_agent(model, rules, task, author,
+                    compile_tests, max_turns, console, f'Acceptance batch {number} / independent author',
+                    allow_discovery=False, max_calls=setting('BATCH_CALLS', 48), feedback=initial)
+                entry['generation_turns'] = agent['turns']
+            regression = list(dict.fromkeys([acceptance_path(rid) for rid in [*accepted, *([] if is_journey else rids)] ] + ([JOURNEY_PATH] if is_journey else [])))
             pages = {pid for rid in rids for pid in relevant_pages(ui, rid)}
             workspace = front.workspace(paths=front.paths('page', pages),
                 references=[*regression, *ui_files, FIXTURE, 'frontend/src/ui-runtime.ts',
@@ -130,6 +153,10 @@ def run_acceptance_batches(input_dir, arc_dir, schema, backend, ui, design, mode
                         raise ValueError(evidence['typecheck']['output'])
                     evidence['acceptance'] = checks.tests(regression)
                     require_suites(evidence['acceptance'], regression, output)
+                    if enabled('scenario_coverage'):
+                        require_coverage(evidence['acceptance'], tree, list(dict.fromkeys([*accepted, *([] if is_journey else rids)])), executed=True)
+                    if is_journey:
+                        require_coverage(evidence['acceptance'], tree, rids, executed=True, journey=True)
                     if ui_files:
                         evidence['ui'] = ui_checks.tests(ui_files)
                         require_green(evidence['ui'])
@@ -150,12 +177,16 @@ def run_acceptance_batches(input_dir, arc_dir, schema, backend, ui, design, mode
                     result = gate()
                     agent = {'turns': 0, 'checks': result}
                 except (ValueError, RuntimeError) as error:
+                    observed = getattr(error, 'feedback', {'error': str(error)})
                     repair_task = {**task, 'original_requirements': {rid: requirement_context(tree, rid) for rid in rids},
                         'backend_apis': apis, 'page_subtrees': {pid: relevant_pages(ui, rid)[pid]
                             for rid in rids for pid in relevant_pages(ui, rid)},
                         'application_entrypoints': list(APPLICATION_ENTRYPOINTS),
                         'backend_entrypoints': {'registry': 'backend/src/api/register.ts',
                             'app': 'backend/src/app.ts', 'server': 'backend/src/server.ts'}}
+                    if enabled('shared_failure_diagnosis'):
+                        repair_task['shared_failure_context'] = shared_failure_context(observed, tree, backend, output)
+                        entry['shared_failure_context'] = repair_task['shared_failure_context']
                     from infrastructure.shared.project.contract_codegen import state as transport_state, CLIENT
                     if transport_state(output).get('managed_client'):
                         repair_task['contract_client'] = {'path': CLIENT,
@@ -168,24 +199,34 @@ def run_acceptance_batches(input_dir, arc_dir, schema, backend, ui, design, mode
                         feedback_filter=feedback_for(workspace, [back, front], allow),
                         context_index=index, max_calls=setting('BATCH_CALLS', 48))
                 entry.update(status='GREEN', implementation_turns=agent['turns'], checks=agent['checks'])
-                accepted.extend(rids)
+                if not is_journey:
+                    accepted.extend(rids)
         except (ValueError, RuntimeError) as error:
             entry.update(status='FAILED', error=str(error), feedback=getattr(error, 'feedback', None))
-        for rid in rids:
-            report['requirements'][rid].update(status=entry['status'], group=number)
+        if not is_journey:
+            for rid in rids:
+                report['requirements'][rid].update(status=entry['status'], group=number)
         split_failed(queue, number, group, depth, entry, output, '12')
         save_json(arc_dir / 'independent_acceptance.json', report)
     # Require all intended suites, including previously failed/uncreated ones, at final verification.
     all_paths = [acceptance_path(rid) for rid in tree.leaves]
+    if journey:
+        all_paths.append(JOURNEY_PATH)
+    def accept_final(result):
+        require_suites(result, all_paths, output)
+        if enabled('scenario_coverage'):
+            report['scenario_coverage'] = require_coverage(result, tree, tree.leaves, executed=True)
+        if journey:
+            report['journey_coverage'] = require_coverage(result, tree, [r['id'] for r in journey], executed=True, journey=True)
     verification = final_checks(console,
         typecheck=(lambda: checks.typecheck(all_paths), None),
-        acceptance=(lambda: checks.tests(all_paths), lambda result: require_suites(result, all_paths, output)),
+        acceptance=(lambda: checks.tests(all_paths), accept_final),
         backend_typecheck=(backend_checks.typecheck, None),
         backend_tests=(lambda: backend_checks.tests(api_files), backend_green if api_files else None),
         build=(checks.build, None))
     if ui_files:
         verification.update(final_checks(console, ui=(lambda: ui_checks.tests(ui_files), require_green)))
-    complete_report(report, report['requirements'].values(), verification)
+    complete_report(report, [*report['requirements'].values(), *([report['journey']] if journey else [])], verification)
     actual = verification['acceptance'].get('result') or {}
     report['summary'] = {'requirements': len(accepted), 'e2e_tests': actual.get('passed', 0),
                          'failed': actual.get('failed', 0), 'triggers': 0,

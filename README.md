@@ -62,5 +62,6 @@ npm start
 - [B4.1 本地回放与 UI 设计恢复](docs/b41-local-replay.md)
 - [B4.2 通用接口接线生成](docs/b42-contract-codegen.md)
 - [B4.3 环境恢复与全局停损](docs/b43-environment-guards.md)
+- [B5 场景覆盖与连续用户流程](docs/b5-scenario-coverage.md)
 
 参考实现固定版本：`d3da23e9897db84cfd37ce04a4ab5b38424ef399`。本分支为 B4.3 候选，继承 B4.2 并增加依赖锁定、配置保护、环境恢复与全局停损。模型负责业务规则；环境故障不会继续进入逐页面修复。实际综合分与费用收益需平台评测验证。

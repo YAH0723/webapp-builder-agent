@@ -129,6 +129,7 @@ def parse_playwright_result(result: dict, include_files: bool = False) -> dict:
         raise ValueError(f"Playwright did not return its JSON report: {result['output']}") from error
     failures = []
     files = {}
+    cases = []
 
     def visit(suite):
         """Accumulate nested Playwright suite/spec results into the normalized browser-check report."""
@@ -136,6 +137,9 @@ def parse_playwright_result(result: dict, include_files: bool = False) -> dict:
             filename = spec.get("file", suite.get("file", ""))
             files[filename] = files.get(filename, 0) + len(spec.get("tests", []))
             for test in spec.get("tests", []):
+                cases.append({'file': filename, 'title': spec.get('title', ''),
+                    'annotations': test.get('annotations', []), 'expected_status': test.get('expectedStatus', 'passed'),
+                    'outcomes': [run.get('status') for run in test.get('results', [])]})
                 for run in test.get("results", []):
                     if run.get("status") not in {"passed", "skipped"}:
                         failures.append("\n".join(item.get("message", "") for item in run.get("errors", [])) + "\nTest file: " + filename)
@@ -152,6 +156,7 @@ def parse_playwright_result(result: dict, include_files: bool = False) -> dict:
         "errors": report.get("errors", []), "failures": failures})
     if include_files:
         result["files"] = files
+        result['cases'] = cases
     result["output"] = json.dumps({key: value for key, value in result.items() if key != "output"}, ensure_ascii=False, indent=2)[-24000:]
     return result
 

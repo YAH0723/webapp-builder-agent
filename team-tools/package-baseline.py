@@ -75,7 +75,7 @@ Inspect compilation.json and actual evaluator results, not just process exit sta
 """
 
 
-README_B4 = """# WebApp Builder Agent: B4.3 environment guards
+README_B4 = """# WebApp Builder Agent: B5 scenario coverage
 
 General requirement-to-web-application compiler, not a pre-generated application.
 Entry: python3 main.py REQUIREMENTS_DIRECTORY --output-dir APPLICATION_DIRECTORY
@@ -107,6 +107,10 @@ B4.3 protects package/build configuration, ships a validated dependency lock, pr
 both workspaces and native/TypeScript/bundler dependencies, and stops later model stages
 on unrecovered environment failure. Installation has two compiler-owned attempts;
 environment errors bypass business repair. ARC_B4_ENVIRONMENT_GUARDS=0 disables guards.
+B5 maps original steps to collected/executed independent tests, adds one continuous
+browser user journey for related requirements, and supplies shared API-owner failure
+context to grouped repair. Flags: ARC_B4_SCENARIO_COVERAGE, ARC_B4_USER_JOURNEYS,
+ARC_B4_SHARED_FAILURE_DIAGNOSIS. Mapping checks do not prove semantic assertion coverage.
 
 Platform supplies OPENAI_BASE_URL and OPENAI_API_KEY. No .env or key is bundled.
 No paid inference or official evaluation is performed during packaging. Local checks
@@ -124,9 +128,9 @@ def compiler_path(name: str) -> bool:
     )
 
 
-def build(output: Path, variant: str = 'B4.3') -> dict:
-    if variant not in {'B0', 'B4.3'}:
-        raise ValueError('Use frozen branches/packages for previous variants; this branch packages B4.3')
+def build(output: Path, variant: str = 'B5') -> dict:
+    if variant not in {'B0', 'B5'}:
+        raise ValueError('Use frozen branches/packages for previous variants; this branch packages B5')
     names = sorted(name.decode("utf-8") for name in git("ls-files", "-z").split(b"\0")
         if name and compiler_path(name.decode("utf-8")))
     payload = {}
@@ -144,7 +148,7 @@ def build(output: Path, variant: str = 'B4.3') -> dict:
         payload[name] = data
     required = {"main.py", "requirements.txt", "infrastructure/compiler.py",
         "infrastructure/shared/project/templates/deploy.sh"}
-    if variant == 'B4.3':
+    if variant == 'B5':
         required.update({'infrastructure/shared/agent/efficiency.py',
             'infrastructure/shared/agent/batching.py', 'infrastructure/stages/backend/batching.py',
             'infrastructure/stages/frontend/ui/batching.py',
@@ -152,6 +156,7 @@ def build(output: Path, variant: str = 'B4.3') -> dict:
             'infrastructure/stages/frontend/triggers/direct.py',
             'infrastructure/shared/project/contract_codegen.py',
             'infrastructure/shared/project/environment.py',
+            'infrastructure/stages/frontend/triggers/coverage.py',
             'infrastructure/shared/project/templates/package-lock.json'})
     if not required.issubset(payload):
         raise ValueError(f"Missing runtime files: {required - payload.keys()}")
@@ -162,7 +167,7 @@ def build(output: Path, variant: str = 'B4.3') -> dict:
         raise ValueError('Commit the reviewed compiler before packaging')
     payload["README.md"] = (README if variant == 'B0' else README_B4).encode("utf-8")
     manifest = {
-        "variant": "B0-reference" if variant == 'B0' else 'B4.3-environment-guards', "source_commit": git("rev-parse", "HEAD").decode().strip(),
+        "variant": "B0-reference" if variant == 'B0' else 'B5-scenario-coverage', "source_commit": git("rev-parse", "HEAD").decode().strip(),
         "baseline_compiler_commit": "e529ae516a2f231e41439b750dfb5b88f7e20657",
         "upstream_commit": UPSTREAM, "compiler_unchanged": unchanged,
         "entrypoint": "main.py", "default_model": "deepseek-flash",
@@ -196,7 +201,7 @@ def build(output: Path, variant: str = 'B4.3') -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--variant', choices=['B0','B4.3'], default='B4.3')
+    parser.add_argument('--variant', choices=['B0','B5'], default='B5')
     parser.add_argument("--output", type=Path)
     args=parser.parse_args()
     print(json.dumps(build(args.output or ROOT / f'releases/webapp-builder-agent-{args.variant}.zip', args.variant), ensure_ascii=False, indent=2))
