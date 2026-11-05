@@ -382,5 +382,5 @@ class CompactCompiler:
             return run_file_agent(CountedModel(model, self.budget, 'application_repair'), REPAIR_RULES,
                 {'original_requirements': data['root'], 'plan': design, 'runtime': API_GUIDE},
                 FileTools(self.output_dir, writable=paths, references=list(runtime) + [SPEC], allow_write=writable),
-                self.verify, int(os.getenv('ARC_B6_REPAIR_ROUNDS', '4')), self.console,
+                self.verify, int(os.getenv('ARC_B6_REPAIR_ROUNDS', '3')), self.console,
                 'B6 joint application repair', feedback=failure.feedback, max_calls=self.budget.limit)

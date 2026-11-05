@@ -6,6 +6,7 @@ from infrastructure.shared.agent.discovery import DISCOVERY_RULES, DiscoverySess
 from infrastructure.shared.project.git import checkpoint
 from infrastructure.shared.agent.efficiency import enabled, positive_setting
 from infrastructure.shared.agent.model_policy import ContextBudgetExceeded, task_call
+from infrastructure.shared.agent.retry_policy import attempt_limit
 
 
 RESPONSE_ERRORS = (ValueError, KeyError, TypeError, AttributeError, IndexError)
@@ -42,6 +43,8 @@ def propose_json(model, instructions, request, accept, console, label, max_attem
     """Generate and repair a proposal within a finite total model-call budget."""
     if max_attempts < 1:
         raise ValueError("--max-attempts must be positive")
+    if enabled('bounded_repair'):
+        max_attempts = attempt_limit(max_attempts, 'PROPOSAL_ATTEMPTS')
     request = dict(request)
     policy_state = {}
     if context_index is not None:

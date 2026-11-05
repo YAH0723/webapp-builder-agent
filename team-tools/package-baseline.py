@@ -135,10 +135,10 @@ def compiler_path(name: str) -> bool:
     )
 
 
-README_B6 = """# WebApp Builder Agent: B6 reusable runtime experiment
+README_B6 = """# WebApp Builder Agent: B6.1 three-attempt recovery
 
 Entry: python3 main.py REQUIREMENTS_DIRECTORY --output-dir NEW_APPLICATION_DIRECTORY
-Default route: compact. Use --pipeline classic for the preserved B5.1 orchestration.
+Default route: compact. --pipeline classic retains thirteen-pass orchestration with new retry caps.
 Install Python requirements.txt; runtime needs Node.js 22.12+, npm, Git and Bash.
 The platform supplies MODEL/OPENAI_BASE_URL/OPENAI_API_KEY. Credentials are never bundled.
 Default model deepseek-flash; optional VISUAL_MODEL/VISUAL_BASE_URL/VISUAL_API_KEY for images.
@@ -153,7 +153,11 @@ Tests cannot read implementation during authoring and remain read-only during ap
 Scenario execution mapping is checked, not proof of semantic or official test coverage.
 
 ARC_B6_MAX_MODEL_CALLS=12 caps all logical image/text/read/repair requests. SDK retries
-are outside that counter. ARC_B6_REPAIR_ROUNDS=4; ARC_B6_CHECK_TIMEOUT=300 seconds.
+are outside that counter. ARC_B6_REPAIR_ROUNDS=3; ARC_B6_CHECK_TIMEOUT=300 seconds.
+Edit/proposal tasks default to three attempts INCLUDING the first, not three retries.
+ARC_B3_MAX_EDIT_ROUNDS=3, ARC_B3_MAX_PROPOSAL_ATTEMPTS=3, ARC_B3_MAX_SAME_FAILURES=3.
+Tool errors have stable identities and blocked-path/permitted-source feedback.
+Permission exhaustion cannot reopen through adaptive batch splitting.
 B5.1 text inference/context controls remain; explicit MODEL_REASONING retains precedence.
 Inspect .arc/compilation.json and compact-metrics.json. Deployable partial outputs can
 exit 0 for official grading only after build and isolated production-startup checks;
@@ -165,9 +169,9 @@ billed tokens/cost and time savings are unmeasured. This is an experimental cand
 """
 
 
-def build(output: Path, variant: str = 'B6') -> dict:
-    if variant not in {'B0', 'B6'}:
-        raise ValueError('Use frozen branches/packages for previous variants; this branch packages B6')
+def build(output: Path, variant: str = 'B6.1') -> dict:
+    if variant not in {'B0', 'B6.1'}:
+        raise ValueError('Use frozen branches/packages for previous variants; this branch packages B6.1')
     names = sorted(name.decode("utf-8") for name in git("ls-files", "-z").split(b"\0")
         if name and compiler_path(name.decode("utf-8")))
     payload = {}
@@ -185,7 +189,7 @@ def build(output: Path, variant: str = 'B6') -> dict:
         payload[name] = data
     required = {"main.py", "requirements.txt", "infrastructure/compiler.py",
         "infrastructure/shared/project/templates/deploy.sh"}
-    if variant == 'B6':
+    if variant == 'B6.1':
         required.update({'infrastructure/shared/agent/efficiency.py',
             'infrastructure/shared/agent/batching.py', 'infrastructure/stages/backend/batching.py',
             'infrastructure/stages/frontend/ui/batching.py',
@@ -194,6 +198,7 @@ def build(output: Path, variant: str = 'B6') -> dict:
             'infrastructure/shared/project/contract_codegen.py',
             'infrastructure/shared/project/environment.py',
             'infrastructure/shared/agent/model_policy.py',
+            'infrastructure/shared/agent/retry_policy.py',
             'infrastructure/stages/frontend/triggers/coverage.py',
             'infrastructure/shared/project/templates/package-lock.json',
             'infrastructure/compact/compiler.py', 'infrastructure/compact/requirements.py',
@@ -209,7 +214,7 @@ def build(output: Path, variant: str = 'B6') -> dict:
         raise ValueError('Commit the reviewed compiler before packaging')
     payload["README.md"] = (README if variant == 'B0' else README_B6).encode("utf-8")
     manifest = {
-        "variant": "B0-reference" if variant == 'B0' else 'B6-reusable-runtime', "source_commit": git("rev-parse", "HEAD").decode().strip(),
+        "variant": "B0-reference" if variant == 'B0' else 'B6.1-three-attempts', "source_commit": git("rev-parse", "HEAD").decode().strip(),
         "baseline_compiler_commit": "e529ae516a2f231e41439b750dfb5b88f7e20657",
         "upstream_commit": UPSTREAM, "compiler_unchanged": unchanged,
         "entrypoint": "main.py", "default_model": "deepseek-flash",
@@ -243,7 +248,7 @@ def build(output: Path, variant: str = 'B6') -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--variant', choices=['B0','B6'], default='B6')
+    parser.add_argument('--variant', choices=['B0','B6.1'], default='B6.1')
     parser.add_argument("--output", type=Path)
     args=parser.parse_args()
     print(json.dumps(build(args.output or ROOT / f'releases/webapp-builder-agent-{args.variant}.zip', args.variant), ensure_ascii=False, indent=2))

@@ -81,6 +81,9 @@ def split_failed(queue, position, group, depth, entry, output, stage):
     """One bounded bisection contains batch coupling without returning to per-item loops."""
     if entry.get('status') != 'FAILED' or depth or len(group) < 2 or not enabled('adaptive_split'):
         return
+    if isinstance(entry.get('feedback'), dict) and entry['feedback'].get('retryable') is False:
+        entry['recovery'] = 'stopped_nonretryable_tool_failure'
+        return
     middle = (len(group) + 1) // 2
     queue[position:position] = [(group[:middle], 1), (group[middle:], 1)]
     entry['recovery'] = 'split_once_after_baseline_restore'

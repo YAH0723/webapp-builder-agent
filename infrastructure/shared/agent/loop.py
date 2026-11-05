@@ -10,8 +10,9 @@ from infrastructure.shared.agent.tools.protocol import FILE_TOOL_RULES
 from infrastructure.shared.agent.proposals import RESPONSE_ERRORS, response_feedback
 from infrastructure.shared.project.git import checkpoint
 from infrastructure.utils.files import read_source
-from infrastructure.shared.agent.efficiency import enabled, positive_setting, failure_fingerprint, record_event, scoped_rules
+from infrastructure.shared.agent.efficiency import enabled, positive_setting, record_event, scoped_rules
 from infrastructure.shared.agent.model_policy import task_call, ContextBudgetExceeded
+from infrastructure.shared.agent.retry_policy import attempt_limit, rejection_identity, permission_hint
 
 
 class AgentExhausted(ValueError):
@@ -35,13 +36,16 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
         raise ValueError("--max-turns must be positive")
     if max_calls is not None and max_calls < 1:
         raise ValueError('max_calls must be positive')
+    if enabled('bounded_repair'):
+        max_turns = attempt_limit(max_turns)
     index = context_index if allow_discovery else None
     allow_discovery = index is not None
     discovery, context_result = DiscoverySession(index), None
     read_files = {}
     feedback = [] if feedback is None else [feedback_filter(feedback) if feedback_filter else feedback]
     check_feedback = list(feedback)
-    model_calls, repeats, previous_failure = 0, 0, None
+    model_calls, failures_seen = 0, {}
+    last_hint, last_rejected = None, None
     policy_state, checked_failures = {}, 0
     call_limit = (max_calls or positive_setting('MAX_TASK_CALLS', 32)) if enabled('bounded_repair') else None
     for turn in range(1, max_turns + 1):
@@ -155,12 +159,17 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
             raise
         except (*RESPONSE_ERRORS, RuntimeError, OSError) as error:
             message = str(error)
-            console.show(f"{label} | Repair feedback", message)
             rejected = (getattr(error, "feedback", {"error": message}) if applied
                 else response_feedback(error, response))
             if isinstance(response, dict) and response.get("diagnosis") and isinstance(rejected, dict):
                 rejected = {**rejected, "previous_diagnosis": response["diagnosis"]}
             rejected = feedback_filter(rejected) if feedback_filter else rejected
+            hint = permission_hint(error, files)
+            if hint:
+                if not isinstance(rejected, dict): rejected = {'evidence': rejected}
+                rejected = {**rejected, 'file_permissions': hint}
+            last_hint, last_rejected = hint, rejected
+            console.show(f"{label} | Repair feedback", json.dumps(hint, ensure_ascii=False) if hint else message)
             if checking:
                 checked_failures += 1
                 check_feedback = [rejected]
@@ -169,13 +178,18 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
                 feedback = [*check_feedback, rejected]
             checkpoint(files.output, task=label, action=f"Reject edit round {turn}", status="REJECTED",
                 details={"round": turn, "applied": applied, "feedback": feedback})
-            if checking and enabled('bounded_repair'):
-                fingerprint = failure_fingerprint(rejected)
-                repeats = repeats + 1 if fingerprint == previous_failure else 1
-                previous_failure = fingerprint
-                if repeats >= positive_setting('MAX_SAME_FAILURES', 4):
+            if enabled('bounded_repair'):
+                fingerprint = rejection_identity(error, rejected, checking)
+                failures_seen[fingerprint] = failures_seen.get(fingerprint, 0) + 1
+                repeats = failures_seen[fingerprint]
+                if repeats >= positive_setting('MAX_SAME_FAILURES', 3):
                     record_event(files.output, 'task', label=label, status='STALLED',
-                        model_calls=model_calls, fingerprint=fingerprint, repeats=repeats)
-                    raise AgentExhausted(label, turn, {'error': 'Repeated unchanged acceptance failure',
-                        'model_calls': model_calls, 'last_checks': check_feedback}) from error
+                        model_calls=model_calls, fingerprint=fingerprint, repeats=repeats,
+                        failure_phase='acceptance' if checking else 'tool_or_response')
+                    raise AgentExhausted(label, turn, {'error': 'Repeated task failure reached the limit',
+                        'model_calls': model_calls, 'repeats': repeats, 'last_feedback': rejected,
+                        'retryable': False if hint else True, 'last_checks': check_feedback}) from error
+    if last_hint:
+        raise AgentExhausted(label, max_turns, {'error': 'Task attempt limit reached after permission rejection',
+            'retryable': False, 'model_calls': model_calls, 'last_feedback': last_rejected})
     raise AgentExhausted(label, max_turns, feedback)

@@ -4,7 +4,7 @@
 
 当前输入为包含 `requirements.yaml` 和引用图片的目录；自然语言需求入口尚未实现。
 
-本分支为 **B6 通用运行库与少轮完整应用生成实验**。默认联合规划、独立编写验收测试、联合生成前后端，并复用通用存储、请求、导航、表单、列表与确认弹窗。保留 `--pipeline classic` 运行此前 B5.1 的十三阶段流程。机制和限制见 [B6 说明](docs/b6-reusable-runtime.md)；实际费用和官方正确率尚未实测。
+本分支为 **B6.1 三次尝试与工具错误停损**，继承 B6 通用运行库和少轮联合生成。文件编辑、设计提案默认最多三次尝试（含首次），工具权限错误也纳入停止机制。`--pipeline classic` 保留十三阶段调度，并应用新限制。见 [B6.1 说明](docs/b61-three-attempts.md)；费用和官方正确率尚未实测。
 
 ## 环境
 
@@ -52,7 +52,7 @@ npm start
 | `infrastructure/stages/` | 需求、数据库、后端、前端处理 |
 | `infrastructure/shared/` | 模型、检索、编辑循环、项目模板 |
 | `tests/` | 编译器及工具测试 |
-| `team-tools/package-baseline.py` | 当前 B6 干净打包工具；旧版本使用对应分支 |
+| `team-tools/package-baseline.py` | 当前 B6.1 干净打包工具；旧版本使用对应分支 |
 | `team-tools/check-stage.py` | 不调用模型的本地单阶段检查 |
 | `team-tools/check-compact.py` | 不调用模型的 B6 构建与浏览器验收复查 |
 
@@ -69,5 +69,7 @@ npm start
 - [B5 场景覆盖与连续用户流程](docs/b5-scenario-coverage.md)
 - [B5.1 任务级推理与完整请求预算](docs/b51-model-budget.md)
 - [B6 通用运行库与少轮完整应用生成](docs/b6-reusable-runtime.md)
+- [B6.1 三次尝试与工具错误停损](docs/b61-three-attempts.md)
+- [内部验收条件的来源和边界](docs/acceptance-oracle.md)
 
-参考实现固定版本：`d3da23e9897db84cfd37ce04a4ab5b38424ef399`。B6 继承环境保护及文本请求预算，默认使用新的 compact 流程；classic 保留 B5.1。实际正确率、综合分与费用收益需平台评测验证。
+参考实现固定版本：`d3da23e9897db84cfd37ce04a4ab5b38424ef399`。B6.1 继承环境保护、文本请求预算和通用运行库，并收紧重试；已发布旧版 ZIP 保持不变。实际正确率、综合分与费用收益需平台评测验证。
