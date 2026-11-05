@@ -11,6 +11,7 @@ from infrastructure.shared.agent.proposals import RESPONSE_ERRORS, response_feed
 from infrastructure.shared.project.git import checkpoint
 from infrastructure.utils.files import read_source
 from infrastructure.shared.agent.efficiency import enabled, positive_setting, failure_fingerprint, record_event, scoped_rules
+from infrastructure.shared.agent.model_policy import task_call, ContextBudgetExceeded
 
 
 class AgentExhausted(ValueError):
@@ -41,6 +42,7 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
     feedback = [] if feedback is None else [feedback_filter(feedback) if feedback_filter else feedback]
     check_feedback = list(feedback)
     model_calls, repeats, previous_failure = 0, 0, None
+    policy_state, checked_failures = {}, 0
     call_limit = (max_calls or positive_setting('MAX_TASK_CALLS', 32)) if enabled('bounded_repair') else None
     for turn in range(1, max_turns + 1):
         console.show(f"{label} | Edit round {turn}/{max_turns}",
@@ -86,7 +88,8 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
                     rules += "\n\n" + DISCOVERY_RULES
                 else:
                     rules += "\nSemantic discovery is disabled for this task. Use supplied evidence and read_file only."
-                return model.generate_json(rules, request)
+                with task_call(policy_state, turn, checked_failures):
+                    return model.generate_json(rules, request)
             response = request_model()
             while isinstance(response, dict):
                 if "context_request" in response:
@@ -148,7 +151,7 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
             if enabled('bounded_repair'):
                 record_event(files.output, 'task', label=label, status='GREEN', model_calls=model_calls, turns=turn)
             return {"turns": turn, "checks": checks}
-        except AgentExhausted:
+        except (AgentExhausted, ContextBudgetExceeded):
             raise
         except (*RESPONSE_ERRORS, RuntimeError, OSError) as error:
             message = str(error)
@@ -159,6 +162,7 @@ def run_file_agent(model, instructions: str, task: dict, files: FileTools, gate,
                 rejected = {**rejected, "previous_diagnosis": response["diagnosis"]}
             rejected = feedback_filter(rejected) if feedback_filter else rejected
             if checking:
+                checked_failures += 1
                 check_feedback = [rejected]
                 feedback = list(check_feedback)
             else:

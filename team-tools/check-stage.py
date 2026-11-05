@@ -102,7 +102,8 @@ def check(output, stage, ids=(), selected_checks=('typecheck', 'tests', 'build')
                                 from infrastructure.stages.frontend.triggers.coverage import require_coverage
                                 from infrastructure.stages.requirements.tree import RequirementTree
                                 tree = RequirementTree(read_artifact(output / '.arc', 'requirements.json'))
-                                require_coverage(result, tree, [rid for rid in paths if rid != '@user-journey'], executed=True)
+                                if saved.get('scenario_coverage_enabled',True):
+                                    require_coverage(result, tree, [rid for rid in paths if rid != '@user-journey'], executed=True)
                                 if '@user-journey' in paths:
                                     require_coverage(result, tree, saved['journey']['requirements'], executed=True, journey=True)
                         else:

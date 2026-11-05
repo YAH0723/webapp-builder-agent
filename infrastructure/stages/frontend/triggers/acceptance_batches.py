@@ -72,7 +72,7 @@ def run_acceptance_batches(input_dir, arc_dir, schema, backend, ui, design, mode
     groups = chunks(records, setting('ACCEPTANCE_BATCH_SIZE', 4), setting('BATCH_CONTEXT_CHARS', 80000))
     log_plan(output, '12', groups, len(records))
     report = {'status': 'RUNNING', 'mode': 'b5_scenario_acceptance',
-              'requirements': {}, 'groups': []}
+              'requirements': {}, 'groups': [], 'scenario_coverage_enabled': enabled('scenario_coverage')}
     accepted = []
     ui_files = [ui_path(pid) for pid in ui['pages'] if (output / ui_path(pid)).is_file()]
     api_files = [p for aid in backend['apis'] if (p := selected_path(output, 'backend_test', aid))]

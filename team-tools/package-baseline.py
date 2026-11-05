@@ -75,7 +75,7 @@ Inspect compilation.json and actual evaluator results, not just process exit sta
 """
 
 
-README_B4 = """# WebApp Builder Agent: B5 scenario coverage
+README_B4 = """# WebApp Builder Agent: B5.1 model and context budgets
 
 General requirement-to-web-application compiler, not a pre-generated application.
 Entry: python3 main.py REQUIREMENTS_DIRECTORY --output-dir APPLICATION_DIRECTORY
@@ -86,7 +86,8 @@ page implementation with business wiring (4 pages), deterministic UI/API binding
 ONE independently authored acceptance family (4 requirements) with grouped app repair.
 Tests are read-only during app repair. Independent authors cannot read application code.
 Previously accepted suites regress per group; final full tests and builds remain required.
-Model/reasoning and platform credential loading are unchanged from B0/B3.
+Model identity and platform credential loading are unchanged from B0/B3.
+Requested reasoning is governed by the B5.1 policy described below.
 
 ARC_AGENT_PROFILE=b4 is default; b3 selects previous orchestration, b0 disables features
 but is not the frozen B0 ZIP. Switches: ARC_B4_BACKEND_BATCHES,
@@ -111,6 +112,12 @@ B5 maps original steps to collected/executed independent tests, adds one continu
 browser user journey for related requirements, and supplies shared API-owner failure
 context to grouped repair. Flags: ARC_B4_SCENARIO_COVERAGE, ARC_B4_USER_JOURNEYS,
 ARC_B4_SHARED_FAILURE_DIAGNOSIS. Mapping checks do not prove semantic assertion coverage.
+B5.1 adds task-level requested reasoning, bounded output ceilings, full serialized
+request budgets, retrievable file/design windowing and cache-friendly input ordering.
+Explicit MODEL_REASONING is preserved unless ARC_B5_OVERRIDE_REASONING=1.
+Flags: ARC_B5_TASK_REASONING, ARC_B5_OUTPUT_BUDGET, ARC_B5_CONTEXT_BUDGET,
+ARC_B5_CACHE_LAYOUT, ARC_B5_REPAIR_ESCALATION. Default input budget: 196608 characters;
+not an exact token count. Mandatory requirements/contracts are not truncated.
 
 Platform supplies OPENAI_BASE_URL and OPENAI_API_KEY. No .env or key is bundled.
 No paid inference or official evaluation is performed during packaging. Local checks
@@ -128,9 +135,9 @@ def compiler_path(name: str) -> bool:
     )
 
 
-def build(output: Path, variant: str = 'B5') -> dict:
-    if variant not in {'B0', 'B5'}:
-        raise ValueError('Use frozen branches/packages for previous variants; this branch packages B5')
+def build(output: Path, variant: str = 'B5.1') -> dict:
+    if variant not in {'B0', 'B5.1'}:
+        raise ValueError('Use frozen branches/packages for previous variants; this branch packages B5.1')
     names = sorted(name.decode("utf-8") for name in git("ls-files", "-z").split(b"\0")
         if name and compiler_path(name.decode("utf-8")))
     payload = {}
@@ -148,7 +155,7 @@ def build(output: Path, variant: str = 'B5') -> dict:
         payload[name] = data
     required = {"main.py", "requirements.txt", "infrastructure/compiler.py",
         "infrastructure/shared/project/templates/deploy.sh"}
-    if variant == 'B5':
+    if variant == 'B5.1':
         required.update({'infrastructure/shared/agent/efficiency.py',
             'infrastructure/shared/agent/batching.py', 'infrastructure/stages/backend/batching.py',
             'infrastructure/stages/frontend/ui/batching.py',
@@ -156,6 +163,7 @@ def build(output: Path, variant: str = 'B5') -> dict:
             'infrastructure/stages/frontend/triggers/direct.py',
             'infrastructure/shared/project/contract_codegen.py',
             'infrastructure/shared/project/environment.py',
+            'infrastructure/shared/agent/model_policy.py',
             'infrastructure/stages/frontend/triggers/coverage.py',
             'infrastructure/shared/project/templates/package-lock.json'})
     if not required.issubset(payload):
@@ -167,7 +175,7 @@ def build(output: Path, variant: str = 'B5') -> dict:
         raise ValueError('Commit the reviewed compiler before packaging')
     payload["README.md"] = (README if variant == 'B0' else README_B4).encode("utf-8")
     manifest = {
-        "variant": "B0-reference" if variant == 'B0' else 'B5-scenario-coverage', "source_commit": git("rev-parse", "HEAD").decode().strip(),
+        "variant": "B0-reference" if variant == 'B0' else 'B5.1-model-budget', "source_commit": git("rev-parse", "HEAD").decode().strip(),
         "baseline_compiler_commit": "e529ae516a2f231e41439b750dfb5b88f7e20657",
         "upstream_commit": UPSTREAM, "compiler_unchanged": unchanged,
         "entrypoint": "main.py", "default_model": "deepseek-flash",
@@ -201,7 +209,7 @@ def build(output: Path, variant: str = 'B5') -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--variant', choices=['B0','B5'], default='B5')
+    parser.add_argument('--variant', choices=['B0','B5.1'], default='B5.1')
     parser.add_argument("--output", type=Path)
     args=parser.parse_args()
     print(json.dumps(build(args.output or ROOT / f'releases/webapp-builder-agent-{args.variant}.zip', args.variant), ensure_ascii=False, indent=2))

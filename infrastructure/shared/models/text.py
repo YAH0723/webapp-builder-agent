@@ -75,13 +75,14 @@ class TextModel:
 
     def _request(self, **arguments):
         """Apply one output budget to JSON calls, with legacy endpoint compatibility."""
+        output_limit = arguments.pop('_output_limit', self.max_output_tokens)
         while True:
             options = dict(arguments)
             if not getattr(self, "_reasoning_supported", True):
                 options.pop("reasoning_effort", None)
                 options.pop("extra_body", None)
             try:
-                return invoke(self.client, {**options, self._token_parameter: self.max_output_tokens})
+                return invoke(self.client, {**options, self._token_parameter: output_limit})
             except OpenAIError as error:
                 message = str(error).lower()
                 rejected = getattr(error, "status_code", None) in {400, 422} and any(
@@ -97,6 +98,7 @@ class TextModel:
 
     def generate_json(self, instructions: str, payload: dict) -> dict:
         """Request JSON using the stage prompt and serialized task data."""
+        retained_reads = payload.get('read_files', {})
         if enabled('context_reuse'):
             before = len(json.dumps(payload, ensure_ascii=False))
             payload = compact_context(payload)
@@ -107,6 +109,23 @@ class TextModel:
                 record_event(session['output'], 'context', stage=session['stage'], before_chars=before,
                     after_chars=len(json.dumps(payload, ensure_ascii=False)))
         mode = getattr(self, "reasoning", "low")
+        from infrastructure.shared.agent.model_policy import inference_policy, budget_context, LAYOUT_RULES, enabled as policy_enabled
+        policy = None
+        if any(policy_enabled(name) for name in ('task_reasoning','output_budget','context_budget','cache_layout')):
+            policy = inference_policy(payload, self)
+            mode = policy['reasoning']
+            instructions += '\n' + LAYOUT_RULES
+            from infrastructure.utils.presentation.logging import session_info
+            session = session_info()
+            from infrastructure.shared.agent.model_policy import ContextBudgetExceeded
+            try:
+                payload, context_metrics = budget_context(instructions.rstrip() + '\n' + JSON_OUTPUT_RULE, payload, retained_reads=retained_reads)
+            except ContextBudgetExceeded as error:
+                if session:
+                    record_event(session['output'], 'context_budget_blocked', role=policy['role'], error=str(error), requests_sent=0)
+                raise
+            if session:
+                record_event(session['output'], 'model_policy', **policy, **context_metrics)
         try:
             response = self._request(
                 model=self.name,
@@ -116,13 +135,14 @@ class TextModel:
                 ],
                 **({"response_format": {"type": "json_object"}} if getattr(self, "json_mode", True) else {}),
                 **reasoning_arguments(self.name, mode),
+                **({'_output_limit':policy['output_limit']} if policy else {}),
             )
         except OpenAIError as error:
             raise RuntimeError(f"Text model request failed: {error}") from error
         if response.choices and response.choices[0].finish_reason == "length":
             raise ValueError(
                 f"Model output was truncated (finish_reason=length). The output budget is "
-                f"{self.max_output_tokens} tokens including reasoning; this is not an input-length error. "
+                f"{policy['output_limit'] if policy else self.max_output_tokens} tokens including reasoning; this is not an input-length error. "
                 "Return a complete JSON object with only necessary changes/tool calls; omit unchanged files. "
                 "Do not spend the entire budget restating the task.")
         if response.choices and getattr(response.choices[0].message, "refusal", None):

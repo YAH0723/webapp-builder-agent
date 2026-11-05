@@ -5,6 +5,7 @@ import json
 from infrastructure.shared.agent.discovery import DISCOVERY_RULES, DiscoverySession
 from infrastructure.shared.project.git import checkpoint
 from infrastructure.shared.agent.efficiency import enabled, positive_setting
+from infrastructure.shared.agent.model_policy import ContextBudgetExceeded, task_call
 
 
 RESPONSE_ERRORS = (ValueError, KeyError, TypeError, AttributeError, IndexError)
@@ -42,6 +43,7 @@ def propose_json(model, instructions, request, accept, console, label, max_attem
     if max_attempts < 1:
         raise ValueError("--max-attempts must be positive")
     request = dict(request)
+    policy_state = {}
     if context_index is not None:
         instructions += "\n\n" + DISCOVERY_RULES
         request["context_kinds"] = list(context_index.records())
@@ -52,7 +54,8 @@ def propose_json(model, instructions, request, accept, console, label, max_attem
         if enabled('bounded_repair') and model_calls >= positive_setting('MAX_DESIGN_CALLS', 32):
             raise RuntimeError(f'{label}: B3 logical model-call limit reached after {model_calls} calls')
         model_calls += 1
-        return model.generate_json(prompt, request)
+        with task_call(policy_state, attempt, 0):
+            return model.generate_json(prompt, request)
     for attempt in range(1, max_attempts + 1):
         progress = f"{attempt}/{max_attempts}"
         console.show(f"{label} | Model proposal {progress}", "Generate the proposal; response-reading and obligation errors receive repair feedback.")
@@ -76,6 +79,8 @@ def propose_json(model, instructions, request, accept, console, label, max_attem
             checkpoint(task=label, action=f"Accept design proposal {attempt}",
                 details={"attempt": attempt, "sections": list(response) if isinstance(response, dict) else []})
             return accepted, response
+        except ContextBudgetExceeded:
+            raise
         except RESPONSE_ERRORS as error:
             feedback = response_feedback(error, response)
             feedback["failed_attempt"] = attempt
